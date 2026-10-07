@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>puppet-agent // Neural Marionette Interface</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;600;700;900&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Full-screen transparent canvas overlay for glowing puppet strings -->
+    <canvas id="strings-canvas" class="strings-overlay"></canvas>
+
+    <!-- Main Application Shell -->
+    <div id="app" class="app-container">
+      
+      <!-- Top Navigation & System Bar -->
+      <header class="app-header">
+        <div class="header-brand">
+          <div class="brand-pulse"></div>
+          <span class="brand-title">PUPPET-AGENT</span>
+          <span class="brand-tag">NEURAL MARIONETTE v1.4</span>
+        </div>
+
+        <div class="header-center-info">
+          <span class="hud-chip"><span class="chip-dot glow-orange"></span>5 STRINGS ATTACHED</span>
+          <span class="hud-chip" id="cam-status-chip"><span class="chip-dot glow-green"></span>VISION READY</span>
+        </div>
+
+        <div class="header-actions">
+          <button id="camera-toggle-btn" class="ctrl-btn pulse-glow" title="Start or restart webcam tracking">
+            <span class="btn-icon">📷</span>
+            <span class="btn-text">START CAMERA</span>
+          </button>
+          <button id="sim-toggle-btn" class="ctrl-btn secondary" title="Toggle interactive gesture simulation if camera is not available">
+            <span class="btn-icon">🎮</span>
+            <span class="btn-text">SIMULATOR</span>
+          </button>
+          <button id="sound-toggle-btn" class="ctrl-btn icon-only" title="Toggle audio sound effects">
+            <span class="btn-icon">🔊</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Two Panels Main Layout -->
+      <main class="panels-container">
+        
+        <!-- LEFT PANEL: Three.js 3D Low-Poly Robot Viewport -->
+        <section class="panel panel-left" id="robot-panel">
+          
+          <!-- Status Label HUD Above Robot -->
+          <div class="robot-hud">
+            <div class="hud-top-meta">
+              <span class="hud-label">NEURAL PUPPET STATE</span>
+              <span class="hud-latency" id="hud-fps-label">60 FPS // LERP 0.08</span>
+            </div>
+            <div class="status-badge" id="robot-status-badge" data-state="IDLE">
+              <span class="status-indicator-dot"></span>
+              <span class="status-text" id="status-text-label">IDLE : STANDING STILL</span>
+            </div>
+            <div class="hud-details-row">
+              <span class="hud-subdetail" id="gesture-detected-label">GESTURE: OPEN HAND</span>
+              <span class="hud-subdetail" id="joints-count-label">5 JOINTS BOUND</span>
+            </div>
+          </div>
+
+          <!-- Three.js 3D WebGL Canvas Container -->
+          <div id="three-container" class="three-viewport">
+            <!-- Three.js canvas will be inserted here -->
+            <div class="viewport-crosshair crosshair-tl"></div>
+            <div class="viewport-crosshair crosshair-tr"></div>
+            <div class="viewport-crosshair crosshair-bl"></div>
+            <div class="viewport-crosshair crosshair-br"></div>
+            <div class="floor-grid-accent"></div>
+          </div>
+
+          <!-- Joint Attachment Legend -->
+          <div class="robot-bottom-bar">
+            <div class="string-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:#ff7b00"></span>4: THUMB → L-HAND</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ff9900"></span>8: INDEX → HEAD</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ff5500"></span>12: MID → CHEST</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ff7b00"></span>16: RING → R-HAND</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ff3700"></span>20: PINKY → FEET</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- RIGHT PANEL: Fake Terminal with Green Monospace Text -->
+        <section class="panel panel-right" id="terminal-panel">
+          
+          <!-- Terminal Title Bar -->
+          <div class="terminal-header">
+            <div class="terminal-buttons">
+              <span class="term-btn btn-close"></span>
+              <span class="term-btn btn-min"></span>
+              <span class="term-btn btn-max"></span>
+            </div>
+            <div class="terminal-title">agent --watch (tty0) • bash 5.2.15 • [LIVE TELEMETRY]</div>
+            <div class="terminal-status-pill">
+              <span class="pulse-green"></span> STREAMING
+            </div>
+          </div>
+
+          <!-- Terminal Screen / Log Body -->
+          <div class="terminal-body" id="terminal-screen">
+            <div class="terminal-crt-scanlines"></div>
+            <div class="terminal-content" id="terminal-logs">
+              <!-- Logs will be streamed dynamically here -->
+            </div>
+            <div class="terminal-cursor-line">
+              <span class="term-prompt">agent@puppet:~$</span>
+              <span class="terminal-cursor">█</span>
+            </div>
+          </div>
+
+          <!-- Terminal Bottom Bar / Quick Stats -->
+          <div class="terminal-footer">
+            <span class="footer-stat">BUFF: <span id="term-line-count">0</span> LINES</span>
+            <span class="footer-stat">QUEUE: 0 PENDING</span>
+            <span class="footer-stat" id="term-gesture-stat">TRIGGER: AUTO</span>
+            <button id="clear-term-btn" class="footer-action">CLEAR</button>
+          </div>
+        </section>
+      </main>
+
+      <!-- Mirrored Webcam Feed in a Small Corner Box -->
+      <aside class="webcam-corner-box" id="webcam-box">
+        <div class="corner-box-header">
+          <div class="cam-indicator">
+            <span class="cam-dot"></span>
+            <span class="cam-title">OPTICAL FEED</span>
+          </div>
+          <span class="cam-mode-tag" id="tracking-mode-badge">MIRRORED</span>
+        </div>
+
+        <div class="video-wrapper">
+          <!-- Video element for webcam (mirrored) -->
+          <video id="webcam-video" playsinline autoplay muted></video>
+          <!-- Overlay canvas for drawing the 5 white fingertip dots & tracking indicators -->
+          <canvas id="webcam-overlay"></canvas>
+          
+          <!-- Camera Prompt / Permission Overlay -->
+          <div class="cam-overlay-prompt" id="cam-prompt-overlay">
+            <div class="cam-prompt-icon">✋</div>
+            <div class="cam-prompt-text">Click "Start Camera" above to enable live hand tracking</div>
+            <button id="cam-activate-direct-btn" class="cam-direct-btn">ACTIVATE WEBCAM</button>
+          </div>
+        </div>
+
+        <div class="corner-box-footer">
+          <span class="cam-hint" id="hand-tracking-hint">Tip: Hold hand 1-2ft from camera</span>
+        </div>
+      </aside>
+
+      <!-- Simulated Gesture Floating Control (Available anytime) -->
+      <div class="simulator-drawer" id="sim-drawer">
+        <div class="sim-title">GESTURE SIMULATOR (CAMERA FALLBACK)</div>
+        <div class="sim-buttons">
+          <button class="sim-btn active" data-gesture="OPEN_HAND">
+            <span class="sim-emoji">✋</span>
+            <span class="sim-name">OPEN HAND</span>
+            <span class="sim-rule">IDLE: Slow Breathing</span>
+          </button>
+          <button class="sim-btn" data-gesture="INDEX_UP">
+            <span class="sim-emoji">☝️</span>
+            <span class="sim-name">INDEX FINGER UP</span>
+            <span class="sim-rule">IDEA: Head Tilts & Ideas Stream</span>
+          </button>
+          <button class="sim-btn" data-gesture="FIST">
+            <span class="sim-emoji">✊</span>
+            <span class="sim-name">CLOSED FIST / PINCH</span>
+            <span class="sim-rule">LIFTING: Arms Raise & Shake</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
