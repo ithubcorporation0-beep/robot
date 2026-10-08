@@ -1,5 +1,145 @@
-// Voice Assistant Engine: Mode A (Built-in) and Mode B (Gemini AI)
-// Echo protection, SpeechRecognition single-shot listening, multi-language support (EN, UR, PS), and state coordination.
+// Multi-Provider AI Assistant Engine
+// Supports: Groq (Llama 3.3 70B & Whisper), Google Gemini (Gemini 2.5 Flash), OpenAI (GPT-4o Mini & TTS-1)
+// Never hardcodes keys: reads exclusively from import.meta.env (VITE_GROQ_KEY, VITE_GEMINI_KEY, VITE_OPENAI_KEY)
+
+// 1. Unified Models Configuration (Current official model names)
+export const AI_MODELS_CONFIG = {
+  groq: {
+    name: 'Groq',
+    badge: 'AI: GROQ',
+    chatModel: 'llama-3.3-70b-versatile',
+    transcriptionModel: 'whisper-large-v3',
+    chatEndpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    transcriptionEndpoint: 'https://api.groq.com/openai/v1/audio/transcriptions'
+  },
+  gemini: {
+    name: 'Gemini',
+    badge: 'AI: GEMINI',
+    chatModel: 'gemini-2.5-flash',
+    chatEndpoint: (key) => `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`
+  },
+  openai: {
+    name: 'OpenAI',
+    badge: 'AI: OPENAI',
+    chatModel: 'gpt-4o-mini',
+    ttsModel: 'tts-1',
+    ttsVoice: 'alloy',
+    chatEndpoint: 'https://api.openai.com/v1/chat/completions',
+    ttsEndpoint: 'https://api.openai.com/v1/audio/speech'
+  }
+};
+
+// Safe API key storage helpers (stores keys in localStorage under 'puppet_keys')
+export function getSavedPuppetKeys() {
+  if (typeof localStorage === 'undefined') return { groq: '', gemini: '', openai: '' };
+  try {
+    const raw = localStorage.getItem('puppet_keys');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        groq: String(parsed.groq || '').trim(),
+        gemini: String(parsed.gemini || '').trim(),
+        openai: String(parsed.openai || '').trim()
+      };
+    }
+  } catch (_) {}
+  return { groq: '', gemini: '', openai: '' };
+}
+
+export function savePuppetKeys(keys = {}) {
+  if (typeof localStorage === 'undefined') return;
+  const payload = {
+    groq: String(keys.groq || '').trim(),
+    gemini: String(keys.gemini || '').trim(),
+    openai: String(keys.openai || '').trim()
+  };
+  localStorage.setItem('puppet_keys', JSON.stringify(payload));
+}
+
+export function clearPuppetKeys() {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem('puppet_keys');
+}
+
+// Safe API key reader: reads from localStorage ('puppet_keys') FIRST, import.meta.env (.env) as fallback
+export function getApiKeys() {
+  const local = getSavedPuppetKeys();
+  const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
+  return {
+    groq: local.groq || String(env.VITE_GROQ_KEY || '').trim(),
+    gemini: local.gemini || String(env.VITE_GEMINI_KEY || env.VITE_AI_KEY || '').trim(),
+    openai: local.openai || String(env.VITE_OPENAI_KEY || '').trim()
+  };
+}
+
+// Tiny test request helper for each provider (returns { ok: boolean, message: string })
+export async function testApiKey(provider, key) {
+  const cleanKey = String(key || '').trim();
+  if (!cleanKey) {
+    return { ok: false, message: 'Empty key' };
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    if (provider === 'groq') {
+      const res = await fetch('https://api.groq.com/openai/v1/models', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${cleanKey}` },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        return { ok: true, message: 'Tested OK' };
+      }
+      if (res.status === 401) {
+        return { ok: false, message: 'Invalid key' };
+      }
+      return { ok: false, message: `HTTP ${res.status}` };
+    }
+
+    if (provider === 'gemini') {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        return { ok: true, message: 'Tested OK' };
+      }
+      if (res.status === 400 || res.status === 403 || res.status === 401) {
+        return { ok: false, message: 'Invalid key' };
+      }
+      return { ok: false, message: `HTTP ${res.status}` };
+    }
+
+    if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${cleanKey}` },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        return { ok: true, message: 'Tested OK' };
+      }
+      if (res.status === 401) {
+        return { ok: false, message: 'Invalid key' };
+      }
+      return { ok: false, message: `HTTP ${res.status}` };
+    }
+
+    clearTimeout(timeoutId);
+    return { ok: false, message: 'Unknown provider' };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return { ok: false, message: 'Timeout' };
+    }
+    return { ok: false, message: 'Network error' };
+  }
+}
 
 export const LANG_CONFIG = {
   en: {
@@ -33,16 +173,20 @@ export class VoiceAssistant {
     this.onError = options.onError || (() => {});
     this.onStatus = options.onStatus || (() => {});
     this.onDelegate = options.onDelegate || null;
+    this.onProviderBadgeUpdate = options.onProviderBadgeUpdate || (() => {});
     this.robotVoice = options.robotVoice;
 
-    // Detect Vite environment variable VITE_AI_KEY
-    this.apiKey = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_AI_KEY)
-      ? String(import.meta.env.VITE_AI_KEY).trim()
-      : '';
+    // Preferred provider saved in localStorage (stores ONLY provider name, never keys)
+    const savedProvider = (typeof localStorage !== 'undefined' && localStorage.getItem('puppet_agent_preferred_provider')) || 'auto';
+    this.preferredProvider = ['auto', 'groq', 'gemini', 'openai'].includes(savedProvider) ? savedProvider : 'auto';
 
-    this.isAiMode = Boolean(this.apiKey && this.apiKey.length > 5);
+    // HQ Listening option (Groq Whisper)
+    this.isHqListening = (typeof localStorage !== 'undefined' && localStorage.getItem('puppet_agent_hq_listening') === 'true');
 
-    // Multi-Language Persistence: Load saved language or default to 'en'
+    // Currently answering provider (null if built-in)
+    this.currentAnsweringProvider = null;
+
+    // Multi-Language Persistence
     const savedLang = (typeof localStorage !== 'undefined' && localStorage.getItem('puppet_agent_lang')) || 'en';
     this.currentLang = LANG_CONFIG[savedLang] ? savedLang : 'en';
 
@@ -92,6 +236,12 @@ export class VoiceAssistant {
       'webkitSpeechRecognition' in window || 'SpeechRecognition' in window
     );
 
+    // MediaRecorder state for HQ Listening
+    this.mediaRecorder = null;
+    this.mediaStream = null;
+    this.audioChunks = [];
+    this.activeAudio = null;
+
     this.initRecognition();
   }
 
@@ -100,8 +250,72 @@ export class VoiceAssistant {
     return this.jokesPool[this.currentLang] || this.jokesPool.en;
   }
 
+  get hasAnyAiKey() {
+    const keys = getApiKeys();
+    return Boolean(keys.groq || keys.gemini || keys.openai);
+  }
+
+  get isAiMode() {
+    return this.hasAnyAiKey;
+  }
+
+  // Backward compatibility getter
+  get apiKey() {
+    const keys = getApiKeys();
+    return keys.gemini || keys.groq || keys.openai || '';
+  }
+
+  /**
+   * Returns badge label: "AI: GROQ", "AI: GEMINI", "AI: OPENAI", or "MODE: BUILT-IN"
+   */
+  getBadgeText(provider = this.currentAnsweringProvider) {
+    if (provider === 'groq') return AI_MODELS_CONFIG.groq.badge;
+    if (provider === 'gemini') return AI_MODELS_CONFIG.gemini.badge;
+    if (provider === 'openai') return AI_MODELS_CONFIG.openai.badge;
+    if (provider === 'builtin' || provider === 'built-in') return "MODE: BUILT-IN";
+
+    // If explicit null was passed, user wanted fallback built-in badge
+    if (provider === null) {
+      return "MODE: BUILT-IN";
+    }
+
+    if (this.hasAnyAiKey) {
+      const preferred = this.preferredProvider;
+      const keys = getApiKeys();
+      if (preferred && preferred !== 'auto' && keys[preferred]) {
+        return AI_MODELS_CONFIG[preferred].badge;
+      }
+      if (keys.groq) return AI_MODELS_CONFIG.groq.badge;
+      if (keys.gemini) return AI_MODELS_CONFIG.gemini.badge;
+      if (keys.openai) return AI_MODELS_CONFIG.openai.badge;
+    }
+
+    return "MODE: BUILT-IN";
+  }
+
   getModeLabel() {
-    return this.isAiMode ? "MODE: AI" : "MODE: BUILT-IN";
+    return this.getBadgeText();
+  }
+
+  setPreferredProvider(provider) {
+    const allowed = ['auto', 'groq', 'gemini', 'openai'];
+    const val = allowed.includes(provider) ? provider : 'auto';
+    this.preferredProvider = val;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('puppet_agent_preferred_provider', val);
+      } catch (_) {}
+    }
+    this.onProviderBadgeUpdate(this.getBadgeText(), this.isAiMode);
+  }
+
+  setHqListening(enabled) {
+    this.isHqListening = Boolean(enabled);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('puppet_agent_hq_listening', String(this.isHqListening));
+      } catch (_) {}
+    }
   }
 
   setLanguage(lang) {
@@ -169,16 +383,34 @@ export class VoiceAssistant {
     };
   }
 
-  startListening() {
+  // Determine provider execution order: Groq first (fastest), then Gemini, then OpenAI
+  getProviderOrder() {
+    const standardOrder = ['groq', 'gemini', 'openai'];
+    if (this.preferredProvider && this.preferredProvider !== 'auto' && standardOrder.includes(this.preferredProvider)) {
+      return [this.preferredProvider, ...standardOrder.filter(p => p !== this.preferredProvider)];
+    }
+    return standardOrder;
+  }
+
+  async startListening() {
     // Echo protection: never listen while speaking
     if (this.isSpeaking) {
       return;
     }
-    if (!this.isSupported) {
-      this.onError('microphone unavailable');
+    if (this.isListening) {
       return;
     }
-    if (this.isListening) {
+
+    const keys = getApiKeys();
+    // 4. HQ Listening via Groq Whisper if enabled and key exists
+    if (this.isHqListening && keys.groq) {
+      await this.startHqRecording();
+      return;
+    }
+
+    // Standard webkitSpeechRecognition
+    if (!this.isSupported) {
+      this.onError('microphone unavailable');
       return;
     }
 
@@ -201,11 +433,131 @@ export class VoiceAssistant {
   }
 
   stopListening() {
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.stopHqRecording();
+      return;
+    }
+
     if (this.isListening && this.recognition) {
       try {
         this.recognition.stop();
       } catch (_) {}
     }
+  }
+
+  // HQ Audio Recording via MediaRecorder
+  async startHqRecording() {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.onError('microphone recording not supported');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.mediaStream = stream;
+      this.audioChunks = [];
+
+      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm'))
+        ? 'audio/webm'
+        : '';
+      this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          this.audioChunks.push(e.data);
+        }
+      };
+
+      this.mediaRecorder.onstart = () => {
+        this.isListening = true;
+        this.onStatus({ status: 'LISTENING...', transcript: 'HQ Audio Recording (Groq Whisper)...' });
+      };
+
+      this.mediaRecorder.onerror = (e) => {
+        console.warn('MediaRecorder error:', e);
+        this.stopHqRecording();
+      };
+
+      this.mediaRecorder.start();
+    } catch (err) {
+      console.warn('Microphone permission error:', err);
+      this.onError('microphone unavailable');
+      this.onStatus({ status: 'IDLE', transcript: '' });
+    }
+  }
+
+  stopHqRecording() {
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') return;
+    this.isListening = false;
+    this.onStatus({ status: 'THINKING...', transcript: 'Transcribing with Whisper...' });
+
+    this.mediaRecorder.onstop = async () => {
+      try {
+        if (this.mediaStream) {
+          this.mediaStream.getTracks().forEach(t => t.stop());
+          this.mediaStream = null;
+        }
+
+        if (this.audioChunks.length === 0) {
+          this.onStatus({ status: 'IDLE', transcript: '' });
+          return;
+        }
+
+        const mime = this.mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(this.audioChunks, { type: mime });
+        this.audioChunks = [];
+
+        if (blob.size < 400) {
+          this.onStatus({ status: 'IDLE', transcript: '' });
+          return;
+        }
+
+        const transcript = await this.transcribeWithGroq(blob);
+        if (transcript && transcript.trim().length > 0) {
+          this.processQuestion(transcript.trim());
+        } else {
+          this.onStatus({ status: 'IDLE', transcript: '' });
+        }
+      } catch (err) {
+        console.warn('Groq Whisper transcription error:', err);
+        this.onError(`groq whisper failed: ${err.message || 'transcription error'}`);
+        this.onStatus({ status: 'IDLE', transcript: '' });
+      }
+    };
+
+    try {
+      this.mediaRecorder.stop();
+    } catch (_) {}
+  }
+
+  // Transcribe audio using Groq Whisper Large v3
+  async transcribeWithGroq(audioBlob) {
+    const keys = getApiKeys();
+    if (!keys.groq) {
+      throw new Error('missing VITE_GROQ_KEY');
+    }
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'audio.webm');
+    formData.append('model', AI_MODELS_CONFIG.groq.transcriptionModel);
+    formData.append('language', this.currentLang);
+    formData.append('response_format', 'json');
+
+    const response = await fetch(AI_MODELS_CONFIG.groq.transcriptionEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${keys.groq}`
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.text || '';
   }
 
   async processQuestion(question) {
@@ -221,24 +573,57 @@ export class VoiceAssistant {
     this.onStatus({ status: 'THINKING...', transcript: question });
     this.onStateChange('IDEA', 'ASSISTANT: THINKING');
 
-    // 3. Generate answer (Mode B or Mode A)
+    // 3. Generate answer using fallback chain: Groq -> Gemini -> OpenAI -> Built-in
     let answer = '';
-    if (this.isAiMode) {
-      try {
-        answer = await this.queryGeminiAI(question);
-      } catch (err) {
-        const errorMsg = err.message || 'API request failed';
-        this.onError(`ai error: ${errorMsg}`);
-        // Fallback to Mode A
-        answer = this.getBuiltInAnswer(question);
+    const keys = getApiKeys();
+    const providersToTry = this.getProviderOrder();
+    let succeeded = false;
+
+    let systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Answer ONLY in English, in 1 to 2 short spoken sentences. No markdown, no lists, no emojis.";
+    if (this.currentLang === 'ur') {
+      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Urdu, in 1 to 2 short spoken sentences, using proper script (Urdu in Arabic script / نستعلیق / عربی رسم الخط). Do NOT use Roman Urdu or English. No markdown, no lists, no emojis.";
+    } else if (this.currentLang === 'ps') {
+      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Pashto, in 1 to 2 short spoken sentences, using proper script (Pashto in Arabic script / پښتو ليکدود). Do NOT use Latin/Roman Pashto or English. No markdown, no lists, no emojis.";
+    }
+
+    for (const provider of providersToTry) {
+      const key = keys[provider];
+      if (!key) {
+        this.onError(`${provider} failed: missing VITE_${provider.toUpperCase()}_KEY`);
+        continue;
       }
-    } else {
+
+      try {
+        if (provider === 'groq') {
+          answer = await this.queryGroq(question, systemPrompt, key);
+        } else if (provider === 'gemini') {
+          answer = await this.queryGemini(question, systemPrompt, key);
+        } else if (provider === 'openai') {
+          answer = await this.queryOpenAI(question, systemPrompt, key);
+        }
+
+        if (answer && answer.length > 0) {
+          this.currentAnsweringProvider = provider;
+          this.onProviderBadgeUpdate(this.getBadgeText(provider), true);
+          succeeded = true;
+          break;
+        }
+      } catch (err) {
+        const shortMsg = err.message || 'request error';
+        this.onError(`${provider} failed: ${shortMsg}`);
+      }
+    }
+
+    // Fallback to Mode A built-in answers if all providers failed
+    if (!succeeded) {
+      this.currentAnsweringProvider = null;
+      this.onProviderBadgeUpdate(this.getBadgeText(null), false);
       answer = this.getBuiltInAnswer(question);
     }
 
     // Update conversation memory: keep last 6 messages
-    this.conversationHistory.push({ role: 'user', parts: [{ text: question }] });
-    this.conversationHistory.push({ role: 'model', parts: [{ text: answer }] });
+    this.conversationHistory.push({ role: 'user', text: question });
+    this.conversationHistory.push({ role: 'model', text: answer });
     if (this.conversationHistory.length > 6) {
       this.conversationHistory = this.conversationHistory.slice(-6);
     }
@@ -247,6 +632,149 @@ export class VoiceAssistant {
     this.speakAnswer(answer);
   }
 
+  // Groq Chat Completions API (Llama 3.3 70B)
+  async queryGroq(question, systemPrompt, key) {
+    const messages = [{ role: 'system', content: systemPrompt }];
+    this.conversationHistory.forEach(item => {
+      messages.push({
+        role: item.role === 'model' ? 'assistant' : 'user',
+        content: item.text || item.parts?.[0]?.text || ''
+      });
+    });
+    messages.push({ role: 'user', content: question });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(AI_MODELS_CONFIG.groq.chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: AI_MODELS_CONFIG.groq.chatModel,
+        messages,
+        max_completion_tokens: 150,
+        temperature: 0.7
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) throw new Error('empty response');
+    return text.replace(/[*_#`~]/g, '').trim();
+  }
+
+  // Google Gemini GenerateContent API (Gemini 2.5 Flash)
+  async queryGemini(question, systemPrompt, key) {
+    const contents = [];
+    this.conversationHistory.forEach(item => {
+      contents.push({
+        role: item.role === 'model' ? 'model' : 'user',
+        parts: [{ text: item.text || item.parts?.[0]?.text || '' }]
+      });
+    });
+    contents.push({ role: 'user', parts: [{ text: question }] });
+
+    const payload = {
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: { maxOutputTokens: 150, temperature: 0.7 }
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(AI_MODELS_CONFIG.gemini.chatEndpoint(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidate) throw new Error('empty response');
+    return candidate.replace(/[*_#`~]/g, '').trim();
+  }
+
+  // OpenAI Chat Completions API (GPT-4o Mini)
+  async queryOpenAI(question, systemPrompt, key) {
+    const messages = [{ role: 'system', content: systemPrompt }];
+    this.conversationHistory.forEach(item => {
+      messages.push({
+        role: item.role === 'model' ? 'assistant' : 'user',
+        content: item.text || item.parts?.[0]?.text || ''
+      });
+    });
+    messages.push({ role: 'user', content: question });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(AI_MODELS_CONFIG.openai.chatEndpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: AI_MODELS_CONFIG.openai.chatModel,
+        messages,
+        max_tokens: 150,
+        temperature: 0.7
+      }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(timer));
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) throw new Error('empty response');
+    return text.replace(/[*_#`~]/g, '').trim();
+  }
+
+  // Multi-provider query helper for specialized agents and external consumers
+  async queryAiMultiProvider({ prompt, systemPrompt }) {
+    const keys = getApiKeys();
+    const providersToTry = this.getProviderOrder();
+
+    for (const provider of providersToTry) {
+      const key = keys[provider];
+      if (!key) continue;
+
+      try {
+        if (provider === 'groq') {
+          return await this.queryGroq(prompt, systemPrompt, key);
+        } else if (provider === 'gemini') {
+          return await this.queryGemini(prompt, systemPrompt, key);
+        } else if (provider === 'openai') {
+          return await this.queryOpenAI(prompt, systemPrompt, key);
+        }
+      } catch (err) {
+        this.onError(`${provider} failed: ${err.message || 'request error'}`);
+      }
+    }
+    throw new Error('All AI providers unavailable');
+  }
+
+  // Built-in responses fallback (Mode A)
   getBuiltInAnswer(q) {
     const text = (q || '').trim().toLowerCase();
     const lang = this.currentLang;
@@ -311,7 +839,7 @@ export class VoiceAssistant {
       }
     }
 
-    // 4. Tell me a joke (8 short jokes per language, picked randomly)
+    // 5. Tell me a joke
     const isJoke = text.includes("joke") || text.includes("funny") ||
       /(لطیفہ سناؤ|کوئی لطیفہ|لطیفہ|مزاحیہ|ټوکه ووایه|یوه ټوکه|ټوکه|خندونکې)/i.test(text);
 
@@ -320,63 +848,21 @@ export class VoiceAssistant {
       return jokesList[Math.floor(Math.random() * jokesList.length)];
     }
 
-    // 5. Who made you
-    const isCreator = text.includes("who made you") || text.includes("who created you") ||
-      /(کس نے بنایا|کس نے تخلیق کیا|چا جوړ کړې|چا جوړ کړی)/i.test(text);
-
-    if (isCreator) {
-      if (lang === 'ur') {
-        return "مجھے ڈیپ مائنڈ انجینئرنگ ٹیم نے بطور مصنوعی ذہانت مارونیٹ تخلیق کیا ہے۔";
-      } else if (lang === 'ps') {
-        return "زه د ډیپ مائنډ انجینرۍ ټیم لخوا د مصنوعي ذہانت پتلی په توګه جوړ شوی یم.";
-      } else {
-        return "I was created as an agentic AI marionette by the DeepMind engineering team.";
-      }
-    }
-
     // 6. What can you do
-    const isCapabilities = text.includes("what can you do") || text.includes("your capabilities") ||
-      /(کیا کر سکتے ہو|تم کیا کرتے ہو|څه کولی شې|ستا وړتیاوې)/i.test(text);
+    const isHelp = text.includes("what can you do") || text.includes("help") || text.includes("capabilities") ||
+      /(کیا کر سکتے ہو|مدد|آپ کیا کرتے ہیں|څه کولی شې|مرسته)/i.test(text);
 
-    if (isCapabilities) {
+    if (isHelp) {
       if (lang === 'ur') {
-        return "میں تھری ڈی میں آپ کے اشاروں کی نقل کر سکتا ہوں، نیورل کام انجام دے سکتا ہوں، اور آواز کے جواب دے سکتا ہوں۔";
+        return "میں اشاروں پر عمل کر سکتا ہوں، آواز میں بات کر سکتا ہوں، نوٹس اور ٹاسک یاد رکھ سکتا ہوں۔";
       } else if (lang === 'ps') {
-        return "زه کولی شم په 3D کې ستاسو د لاس اشارو تقلید وکړم او ستاسو پوښتنو ته ځواب ووایم.";
+        return "زه په اشارو حرکت کوم، خبرې کوم، او ستاسو دندې او یادښتونه ساتم.";
       } else {
-        return "I can mirror your hand gestures in 3D, simulate neural workloads, and answer your voice questions.";
+        return "I can respond to hand gestures, answer voice questions, store notes in memory, and manage your tasks.";
       }
     }
 
-    // 7. Thank you
-    const isThankYou = text.includes("thank you") || text.includes("thanks") ||
-      /(شکریہ|بہت شکریہ|مننه|ډېره مننه)/i.test(text);
-
-    if (isThankYou) {
-      if (lang === 'ur') {
-        return "آپ کا بہت شکریہ! میں آپ کے اگلے سوال کے لیے تیار ہوں۔";
-      } else if (lang === 'ps') {
-        return "ډېره مننه! زه ستاسو بلې پوښتنې ته ولاړ یم.";
-      } else {
-        return "You are very welcome! Standing by for your next question.";
-      }
-    }
-
-    // 8. How are you
-    const isHowAreYou = text.includes("how are you") ||
-      /(کیسے ہو|کیا حال ہے|کیسا ہے|څنګه یاست|څنګه یې|روغ جوړ)/i.test(text);
-
-    if (isHowAreYou) {
-      if (lang === 'ur') {
-        return "تمام نیورل سرووز بہترین طریقے سے کام کر رہے ہیں۔ پوچھنے کا شکریہ!";
-      } else if (lang === 'ps') {
-        return "ټول سیسټمونه په پوره موثریت سره کار کوي. د پوښتنې لپاره مننه!";
-      } else {
-        return "All neural servos and telemetry strings are operating at peak efficiency. Thank you for asking!";
-      }
-    }
-
-    // 9. Fallback (Anything else)
+    // 7. Fallback response
     if (lang === 'ur') {
       return "میں فی الحال صرف بنیادی سوالات کے جواب دے سکتا ہوں۔ مکمل جوابات کے لیے اے پی آئی کی شامل کریں۔";
     } else if (lang === 'ps') {
@@ -386,56 +872,8 @@ export class VoiceAssistant {
     }
   }
 
-  async queryGeminiAI(question) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`;
-
-    let systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Answer ONLY in English, in 1 to 2 short spoken sentences. No markdown, no lists, no emojis.";
-    if (this.currentLang === 'ur') {
-      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Urdu, in 1 to 2 short spoken sentences, using proper script (Urdu in Arabic script / نستعلیق / عربی رسم الخط). Do NOT use Roman Urdu or English. No markdown, no lists, no emojis.";
-    } else if (this.currentLang === 'ps') {
-      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Pashto, in 1 to 2 short spoken sentences, using proper script (Pashto in Arabic script / پښتو ليکدود). Do NOT use Latin/Roman Pashto or English. No markdown, no lists, no emojis.";
-    }
-
-    const payload = {
-      systemInstruction: {
-        parts: [
-          {
-            text: systemPrompt
-          }
-        ]
-      },
-      contents: [
-        ...this.conversationHistory,
-        {
-          role: 'user',
-          parts: [{ text: question }]
-        }
-      ]
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const errBody = await response.json().catch(() => ({}));
-      const msg = errBody.error?.message || `HTTP ${response.status} ${response.statusText}`;
-      throw new Error(msg);
-    }
-
-    const data = await response.json();
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidate) {
-      throw new Error("No response generated by model");
-    }
-
-    // Strip markdown or emojis
-    return candidate.replace(/[*_#`~]/g, '').trim();
-  }
-
-  speakAnswer(answer) {
+  // Voice Output Execution
+  async speakAnswer(answer) {
     this.isSpeaking = true;
     this.stopListening();
     this.onStatus({ status: 'ANSWERING...', transcript: answer });
@@ -466,74 +904,140 @@ export class VoiceAssistant {
     const langCode = langConfig.code;
     const langName = langConfig.name;
 
-    // Browser speech synthesis (calm voice, pitch 0.8, rate 1.0)
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        window.speechSynthesis.cancel();
-      } catch (_) {}
+    // Check browser voices
+    const voices = (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.getVoices)
+      ? window.speechSynthesis.getVoices()
+      : [];
+    const matchingVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(langCode));
 
-      const voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
-      const matchingVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(langCode));
+    // 3. For English, keep the browser voice as specified
+    if (langCode === 'en' || matchingVoices.length > 0) {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (_) {}
 
-      if (matchingVoices.length === 0) {
-        // If no voice exists for that language, still show the answer text in the terminal and print "[warn] no <language> voice installed".
-        this.onError(`no ${langName} voice installed`);
-        speechFinished = true;
-        checkFinished();
-        return;
-      }
+        if (matchingVoices.length === 0) {
+          this.onError(`no ${langName} voice installed`);
+          speechFinished = true;
+          checkFinished();
+          return;
+        }
 
-      const SpeechUtterance = (typeof window !== 'undefined' && window.SpeechSynthesisUtterance) ||
-        (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : class {});
-      const utterance = new SpeechUtterance(answer);
-      utterance.rate = 1.0;
-      utterance.pitch = 0.8;
-      utterance.lang = langConfig.recLang;
+        const SpeechUtterance = (typeof window !== 'undefined' && window.SpeechSynthesisUtterance) ||
+          (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : class {});
+        const utterance = new SpeechUtterance(answer);
+        utterance.rate = 1.0;
+        utterance.pitch = 0.8;
+        utterance.lang = langConfig.recLang;
 
-      // Pick best matching voice
-      if (langCode === 'en') {
-        const preferred = matchingVoices.find(v =>
-          v.name.includes('Google US English') ||
-          v.name.includes('David') ||
-          v.name.includes('Alex') ||
-          v.name.includes('Natural') ||
-          v.name.includes('English')
-        );
-        utterance.voice = preferred || matchingVoices[0];
-      } else {
-        utterance.voice = matchingVoices[0];
-      }
+        if (langCode === 'en') {
+          const preferred = matchingVoices.find(v =>
+            v.name.includes('Google US English') ||
+            v.name.includes('David') ||
+            v.name.includes('Alex') ||
+            v.name.includes('Natural') ||
+            v.name.includes('English')
+          );
+          utterance.voice = preferred || matchingVoices[0];
+        } else {
+          utterance.voice = matchingVoices[0];
+        }
 
-      utterance.onend = () => {
-        speechFinished = true;
-        checkFinished();
-      };
-      utterance.onerror = (e) => {
-        console.warn('SpeechSynthesis error:', e);
-        speechFinished = true;
-        checkFinished();
-      };
+        utterance.onend = () => {
+          speechFinished = true;
+          checkFinished();
+        };
+        utterance.onerror = (e) => {
+          console.warn('SpeechSynthesis error:', e);
+          speechFinished = true;
+          checkFinished();
+        };
 
-      // Fallback timeout in case onend never triggers in browser
-      const maxDuration = Math.max(2500, answer.length * 100);
-      setTimeout(() => {
-        if (!speechFinished) {
+        const maxDuration = Math.max(2500, answer.length * 100);
+        setTimeout(() => {
+          if (!speechFinished) {
+            speechFinished = true;
+            checkFinished();
+          }
+        }, maxDuration);
+
+        try {
+          window.speechSynthesis.speak(utterance);
+        } catch (err) {
+          console.warn('SpeechSynthesis speak error:', err);
           speechFinished = true;
           checkFinished();
         }
-      }, maxDuration);
+        return;
+      }
+    }
 
-      try {
-        window.speechSynthesis.speak(utterance);
-      } catch (err) {
-        console.warn('SpeechSynthesis speak error:', err);
+    // 3. For Urdu and Pashto with NO matching browser voice installed:
+    // If VITE_OPENAI_KEY exists, use OpenAI TTS and play the returned audio
+    const keys = getApiKeys();
+    if (keys.openai) {
+      const played = await this.speakWithOpenAITTS(answer, keys.openai, () => {
         speechFinished = true;
         checkFinished();
+      });
+      if (played) {
+        return;
       }
-    } else {
-      this.onError(`no ${langName} voice installed`);
-      speechFinished = true;
-      checkFinished();
+    }
+
+    // Fallback: no voice installed and no OpenAI key
+    this.onError(`no ${langName} voice installed`);
+    speechFinished = true;
+    checkFinished();
+  }
+
+  // OpenAI TTS API (tts-1) for Urdu and Pashto audio playback
+  async speakWithOpenAITTS(answer, openAiKey, onFinish) {
+    try {
+      const response = await fetch(AI_MODELS_CONFIG.openai.ttsEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: AI_MODELS_CONFIG.openai.ttsModel,
+          input: answer,
+          voice: AI_MODELS_CONFIG.openai.ttsVoice
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || `HTTP ${response.status}`);
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+
+      const cleanup = () => {
+        URL.revokeObjectURL(audioUrl);
+        this.activeAudio = null;
+        if (onFinish) onFinish();
+      };
+
+      audio.onended = () => {
+        cleanup();
+      };
+      audio.onerror = (e) => {
+        console.warn('OpenAI TTS audio error:', e);
+        cleanup();
+      };
+
+      this.activeAudio = audio;
+      await audio.play();
+      return true;
+    } catch (err) {
+      console.warn('OpenAI TTS error:', err);
+      this.onError(`openai tts failed: ${err.message || 'audio synthesis error'}`);
+      return false;
     }
   }
 }

@@ -51,13 +51,50 @@ npm run dev
 ```
 Open **[http://localhost:5173/](http://localhost:5173/)** in your browser.
 
+### 4. Configure AI Engine (Multi-Provider Fallback)
+Create a `.env` file in the project root:
+```env
+# Groq: Llama 3.3 70B & Whisper Large v3 (HQ Listening)
+VITE_GROQ_KEY="your-groq-api-key"
+
+# Google Gemini: Gemini 2.5 Flash
+VITE_GEMINI_KEY="your-gemini-api-key"
+
+# OpenAI: GPT-4o Mini & TTS-1 (Urdu & Pashto Voice Output)
+VITE_OPENAI_KEY="your-openai-api-key"
+```
+
+> [!WARNING]
+> **SECURITY NOTICE: LOCAL USE ONLY**
+> Keys in `VITE_` variables are embedded into the client-side JavaScript bundle during the build process and are visible to anyone accessing the site.
+> Therefore, **this build is for local use only**. Never host or deploy this build publicly with production or confidential API keys.
+
+---
+
+## 🧠 Multi-Provider AI Architecture
+
+* **Chat Answers Fallback Order**:
+  1. **Groq** (`llama-3.3-70b-versatile`): Lightning-fast initial responder.
+  2. **Google Gemini** (`gemini-2.5-flash`): High-context multimodal intelligence.
+  3. **OpenAI** (`gpt-4o-mini`): Reliable secondary fallback.
+  4. **Built-in Offline Engine**: Scripted responsive answers when offline or without API keys.
+* **Dynamic Provider Badges**: Live indicator displays `AI: GROQ`, `AI: GEMINI`, `AI: OPENAI`, or `MODE: BUILT-IN`.
+* **Voice Output**: Uses native browser speech synthesis for English. When Urdu or Pashto browser voices are unavailable, seamlessly synthesizes audio via OpenAI `tts-1` (`alloy`) if `VITE_OPENAI_KEY` is present.
+* **HQ Listening**: Optional high-fidelity voice recording via `MediaRecorder` transcribed through Groq Whisper `whisper-large-v3` with language matching.
+* **API Keys Settings Modal (`⚙️`)**: Interactive HUD panel to configure, test, and manage Groq, Google AI Studio (Gemini), and OpenAI keys directly from the browser (stored locally under `puppet_keys`), select the preferred chat provider, and toggle HQ Listening.
+
 ---
 
 ## 🎮 Controls
 
-* **Webcam Mode**: Click **"START CAMERA"** in the top bar or inside the optical feed box and allow camera permissions.
+* **Webcam Mode**: Click **"START CAMERA"** in the top bar and allow camera permissions.
 * **Keyboard Shortcuts**:
+  * `Space` (Hold) : Speak to Puppet Agent
   * `1` : Simulate Open Hand (IDLE)
   * `2` : Simulate Index Finger Up (GENERATING NEW IDEA)
   * `3` : Simulate Closed Fist / Pinch (HEAVY LIFTING)
   * `C` : Toggle Camera On / Off
+  * `F` : Toggle Fullscreen
+  * `R` : Toggle 9:16 Vertical Reel Mode
+  * `V` : Toggle Continuous Voice Recognition
+

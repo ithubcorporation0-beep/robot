@@ -24,7 +24,6 @@
     <div class="reel-header-bar" id="reel-header-bar">
       <div class="reel-glow-line"></div>
       <div class="reel-header-content">
-        <div class="reel-badge"><span class="reel-rec-dot"></span>9:16 LIVE RECORDING</div>
         <h1 class="reel-title">This Is What AI Agentic Coding Looks Like</h1>
         <div class="reel-subtitle">REAL-TIME 3D KINEMATICS • 5-FINGER NEURAL TELEMETRY</div>
       </div>
@@ -97,6 +96,15 @@
         <button id="fullscreen-toggle-btn" class="ctrl-btn" title="Toggle Fullscreen (F)">
           <span class="btn-icon">⛶</span>
           <span class="btn-text">FULLSCREEN</span>
+        </button>
+        <!-- 4. HQ Listening Toggle Button (Groq Whisper) -->
+        <button id="hq-listening-toggle-btn" class="ctrl-btn" title="Toggle Groq Whisper HQ Audio Listening">
+          <span class="btn-icon">⚡</span>
+          <span class="btn-text" id="hq-listening-text">HQ MIC: OFF</span>
+        </button>
+        <!-- 1. Settings Gear Icon Button: at the top right, next to the speaker button -->
+        <button id="settings-toggle-btn" class="ctrl-btn icon-only" title="API KEYS">
+          <span class="btn-icon">⚙️</span>
         </button>
         <!-- Speaker / Voice Output Button: starts OFF until clicked -->
         <button id="sound-toggle-btn" class="ctrl-btn icon-only" title="Voice output: OFF (Click to enable)">
@@ -425,6 +433,9 @@
                 <button class="lang-btn" data-lang="ur" title="Urdu (اردو)">اردو</button>
                 <button class="lang-btn" data-lang="ps" title="Pashto (پښتو)">پښتو</button>
               </div>
+              <button id="mic-hq-toggle-pill" class="mic-hq-pill" title="Toggle Groq Whisper HQ Audio Recording">
+                <span class="hq-pill-dot"></span>HQ
+              </button>
             </div>
             <div class="assistant-space-hint">HOLD [SPACE] TO SPEAK</div>
           </div>
@@ -439,9 +450,12 @@
       <canvas id="webcam-overlay"></canvas>
     </div>
 
-    <!-- Simulated Gesture Floating Control (Available anytime) -->
-    <div class="simulator-drawer" id="sim-drawer">
-      <div class="sim-title">GESTURE SIMULATOR (CAMERA FALLBACK)</div>
+    <!-- Simulated Gesture Floating Control (Hidden by default, toggled via SIMULATOR button) -->
+    <div class="simulator-drawer hidden" id="sim-drawer">
+      <div class="sim-header">
+        <div class="sim-title">GESTURE SIMULATOR (CAMERA FALLBACK)</div>
+        <button id="sim-close-btn" class="sim-close-btn" title="Close simulator drawer">✕</button>
+      </div>
       <div class="sim-buttons">
         <button class="sim-btn active" data-gesture="OPEN_HAND">
           <span class="sim-emoji">✋</span>
@@ -466,6 +480,102 @@
       </div>
     </div>
 
+  <!-- API KEYS Modal Panel -->
+  <div id="settings-modal" class="hud-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="hud-modal-card keys-modal-card">
+      <div class="hud-modal-header">
+        <div class="hud-modal-title-wrap">
+          <span class="panel-accent-bar orange"></span>
+          <h3 id="settings-modal-title" class="hud-modal-title">API KEYS</h3>
+        </div>
+        <button id="settings-close-btn" class="hud-modal-close" title="Close (ESC)">✕</button>
+      </div>
+
+      <div class="hud-modal-body">
+        <!-- 8. First Launch Banner: shown once if no keys exist -->
+        <div id="first-launch-banner" class="first-launch-banner hidden">
+          <span class="first-launch-icon">💡</span>
+          <span class="first-launch-text">Add at least one key to enable AI answers. Built-in mode works without keys.</span>
+        </div>
+
+        <!-- 4. Preferred Chat Provider Dropdown -->
+        <div class="settings-field-group">
+          <label for="settings-provider-select" class="settings-label">
+            Preferred chat provider
+            <span class="settings-subtext">Auto tries Groq, then Gemini, then OpenAI, then built-in answers.</span>
+          </label>
+          <select id="settings-provider-select" class="hud-select">
+            <option value="auto">Auto</option>
+            <option value="groq">Groq</option>
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+
+        <!-- 2. Three Fields: Label, Password Input, Show/Hide Eye Button, Test Button, Status Dot -->
+        <!-- Field 1: Groq API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-groq" class="key-field-label">Groq API key</label>
+            <div class="key-status-indicator" id="status-container-groq">
+              <span class="status-dot dot-grey" id="status-dot-groq"></span>
+              <span class="status-msg" id="status-msg-groq">Empty</span>
+            </div>
+          </div>
+          <div class="key-input-row">
+            <input type="password" id="key-input-groq" class="key-password-input" placeholder="Enter Groq API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-groq" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-groq" title="Test Groq key">TEST</button>
+          </div>
+        </div>
+
+        <!-- Field 2: Google AI Studio (Gemini) API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-gemini" class="key-field-label">Google AI Studio (Gemini) API key</label>
+            <div class="key-status-indicator" id="status-container-gemini">
+              <span class="status-dot dot-grey" id="status-dot-gemini"></span>
+              <span class="status-msg" id="status-msg-gemini">Empty</span>
+            </div>
+          </div>
+          <div class="key-input-row">
+            <input type="password" id="key-input-gemini" class="key-password-input" placeholder="Enter Gemini API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-gemini" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-gemini" title="Test Gemini key">TEST</button>
+          </div>
+        </div>
+
+        <!-- Field 3: OpenAI API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-openai" class="key-field-label">OpenAI API key</label>
+            <div class="key-status-indicator" id="status-container-openai">
+              <span class="status-dot dot-grey" id="status-dot-openai"></span>
+              <span class="status-msg" id="status-msg-openai">Empty</span>
+            </div>
+          </div>
+          <div class="key-input-row">
+            <input type="password" id="key-input-openai" class="key-password-input" placeholder="Enter OpenAI API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-openai" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-openai" title="Test OpenAI key">TEST</button>
+          </div>
+        </div>
+
+        <!-- 7. Security Notice -->
+        <div class="keys-security-notice">
+          <span class="notice-icon">🔒</span>
+          <span class="notice-text">Keys stay in this browser only. Do not use this on a shared computer. Do not publish this app online with keys.</span>
+        </div>
+      </div>
+
+      <!-- 3. Actions: CLEAR ALL & SAVE -->
+      <div class="hud-modal-footer keys-modal-footer">
+        <button type="button" id="settings-clear-all-btn" class="ctrl-btn secondary danger-btn" title="Remove all keys from browser storage">CLEAR ALL</button>
+        <div class="footer-actions-right">
+          <button type="button" id="settings-save-btn" class="ctrl-btn primary-glow">SAVE</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

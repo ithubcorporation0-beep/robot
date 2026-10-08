@@ -4,7 +4,15 @@ import { StringsRenderer } from './strings.js';
 import { HandTracker } from './handTracker.js';
 import { sound } from './sound.js';
 import { RobotVoice, VoiceCommander } from './voice.js';
-import { VoiceAssistant } from './assistant.js';
+import {
+  VoiceAssistant,
+  getApiKeys,
+  getSavedPuppetKeys,
+  savePuppetKeys,
+  clearPuppetKeys,
+  testApiKey,
+  AI_MODELS_CONFIG
+} from './assistant.js';
 import { DelegationManager, detectDelegationType, checkWakeWord } from './delegation.js';
 import { MemoryManager } from './memory.js';
 
@@ -295,6 +303,9 @@ const assistant = new VoiceAssistant({
   onError: (errMessage) => {
     terminal.appendLine(`[warn] ${errMessage}`, 'warn-line');
   },
+  onProviderBadgeUpdate: (badgeText, isAi) => {
+    updateModeBadges(badgeText, isAi);
+  },
   onStatus: ({ status, transcript }) => {
     const waveformContainer = document.getElementById('voice-waveform-container');
     const waveformStatusText = document.getElementById('waveform-status-text');
@@ -384,9 +395,9 @@ const assistant = new VoiceAssistant({
   }
 });
 
-function updateModeBadges() {
-  const modeText = assistant.getModeLabel();
-  const isAi = assistant.isAiMode;
+function updateModeBadges(forcedBadgeText, forcedIsAi) {
+  const modeText = forcedBadgeText || assistant.getBadgeText();
+  const isAi = (forcedIsAi !== undefined) ? forcedIsAi : assistant.isAiMode;
   if (assistantModeText) assistantModeText.textContent = modeText;
   if (hudAssistantModeText) hudAssistantModeText.textContent = modeText;
   if (assistantModeDot) {
@@ -767,6 +778,287 @@ langBtns.forEach(btn => {
 // Sync initial UI from persisted assistant language
 updateLangUI(assistant.currentLang);
 
+// 1-8. API KEYS Modal Panel & Provider Settings Controller
+const settingsToggleBtn = document.getElementById('settings-toggle-btn');
+const settingsModal = document.getElementById('settings-modal');
+const settingsCloseBtn = document.getElementById('settings-close-btn');
+const settingsSaveBtn = document.getElementById('settings-save-btn');
+const settingsClearAllBtn = document.getElementById('settings-clear-all-btn');
+const settingsProviderSelect = document.getElementById('settings-provider-select');
+const firstLaunchBanner = document.getElementById('first-launch-banner');
+
+const hqListeningToggleBtn = document.getElementById('hq-listening-toggle-btn');
+const hqListeningText = document.getElementById('hq-listening-text');
+const micHqTogglePill = document.getElementById('mic-hq-toggle-pill');
+
+const keyInputs = {
+  groq: document.getElementById('key-input-groq'),
+  gemini: document.getElementById('key-input-gemini'),
+  openai: document.getElementById('key-input-openai')
+};
+
+const keyVisBtns = {
+  groq: document.getElementById('toggle-vis-groq'),
+  gemini: document.getElementById('toggle-vis-gemini'),
+  openai: document.getElementById('toggle-vis-openai')
+};
+
+const keyTestBtns = {
+  groq: document.getElementById('test-btn-groq'),
+  gemini: document.getElementById('test-btn-gemini'),
+  openai: document.getElementById('test-btn-openai')
+};
+
+const keyStatusDots = {
+  groq: document.getElementById('status-dot-groq'),
+  gemini: document.getElementById('status-dot-gemini'),
+  openai: document.getElementById('status-dot-openai')
+};
+
+const keyStatusMsgs = {
+  groq: document.getElementById('status-msg-groq'),
+  gemini: document.getElementById('status-msg-gemini'),
+  openai: document.getElementById('status-msg-openai')
+};
+
+// Update status dot and message for an API key field
+function setFieldStatus(provider, state, msg) {
+  const dot = keyStatusDots[provider];
+  const msgEl = keyStatusMsgs[provider];
+  if (!dot || !msgEl) return;
+
+  dot.className = 'status-dot';
+  msgEl.className = 'status-msg';
+
+  if (state === 'green') {
+    dot.classList.add('dot-green');
+    msgEl.classList.add('tested-ok');
+    msgEl.textContent = msg || 'Tested OK';
+  } else if (state === 'red') {
+    dot.classList.add('dot-red');
+    msgEl.classList.add('failed');
+    msgEl.textContent = msg || 'Failed';
+  } else {
+    // grey
+    dot.classList.add('dot-grey');
+    msgEl.textContent = msg || 'Empty';
+  }
+}
+
+// Populate the inputs from localStorage ('puppet_keys') or fallback
+function populateKeysForm() {
+  const saved = getSavedPuppetKeys();
+  const activeKeys = getApiKeys();
+
+  ['groq', 'gemini', 'openai'].forEach(p => {
+    const input = keyInputs[p];
+    if (input) {
+      const val = saved[p] || activeKeys[p] || '';
+      input.value = val;
+      if (!val) {
+        setFieldStatus(p, 'grey', 'Empty');
+      } else {
+        setFieldStatus(p, 'grey', 'Configured');
+      }
+    }
+  });
+
+  if (settingsProviderSelect) {
+    settingsProviderSelect.value = assistant.preferredProvider || 'auto';
+  }
+}
+
+// Wire show/hide eye toggle buttons
+['groq', 'gemini', 'openai'].forEach(p => {
+  const btn = keyVisBtns[p];
+  const input = keyInputs[p];
+  if (btn && input) {
+    btn.addEventListener('click', () => {
+      const isPass = input.type === 'password';
+      input.type = isPass ? 'text' : 'password';
+      btn.textContent = isPass ? '🙈' : '👁️';
+    });
+  }
+
+  if (input) {
+    input.addEventListener('input', () => {
+      if (!input.value.trim()) {
+        setFieldStatus(p, 'grey', 'Empty');
+      } else {
+        setFieldStatus(p, 'grey', 'Untested');
+      }
+    });
+  }
+});
+
+// Wire TEST buttons next to each field
+['groq', 'gemini', 'openai'].forEach(p => {
+  const btn = keyTestBtns[p];
+  const input = keyInputs[p];
+  if (btn && input) {
+    btn.addEventListener('click', async () => {
+      const val = input.value.trim();
+      if (!val) {
+        setFieldStatus(p, 'grey', 'Empty');
+        return;
+      }
+      const prevText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const result = await testApiKey(p, val);
+        if (result.ok) {
+          setFieldStatus(p, 'green', result.message || 'Tested OK');
+        } else {
+          setFieldStatus(p, 'red', result.message || 'Failed');
+        }
+      } catch (err) {
+        setFieldStatus(p, 'red', 'Network error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevText;
+      }
+    });
+  }
+});
+
+// Sync HQ Listening UI state
+function updateHqUi(isHq) {
+  if (hqListeningToggleBtn) {
+    hqListeningToggleBtn.classList.toggle('active', Boolean(isHq));
+  }
+  if (hqListeningText) {
+    hqListeningText.textContent = isHq ? 'HQ MIC: ON' : 'HQ MIC: OFF';
+  }
+  if (micHqTogglePill) {
+    micHqTogglePill.classList.toggle('active', Boolean(isHq));
+  }
+}
+
+function toggleHqListening() {
+  const keys = getApiKeys();
+  const nextState = !assistant.isHqListening;
+  if (nextState && !keys.groq) {
+    terminal.appendLine('[warn] VITE_GROQ_KEY required for HQ Listening (Whisper)', 'warn-line');
+  }
+  assistant.setHqListening(nextState);
+  updateHqUi(assistant.isHqListening);
+  terminal.appendLine(
+    assistant.isHqListening ? '[ok] HQ Listening enabled (Groq Whisper Large v3)' : '[ok] HQ Listening disabled (Web Speech API)',
+    'ok-line'
+  );
+}
+
+// 3. SAVE button: saves keys to localStorage under 'puppet_keys', never prints keys in terminal
+if (settingsSaveBtn) {
+  settingsSaveBtn.addEventListener('click', () => {
+    const keysToSave = {
+      groq: keyInputs.groq ? keyInputs.groq.value.trim() : '',
+      gemini: keyInputs.gemini ? keyInputs.gemini.value.trim() : '',
+      openai: keyInputs.openai ? keyInputs.openai.value.trim() : ''
+    };
+    savePuppetKeys(keysToSave);
+
+    if (settingsProviderSelect) {
+      assistant.setPreferredProvider(settingsProviderSelect.value);
+    }
+
+    terminal.appendLine('[ok] keys saved', 'ok-line');
+
+    // 6. Update badge right after saving keys, without reloading the page
+    updateModeBadges();
+
+    if (settingsModal) {
+      settingsModal.classList.add('hidden');
+    }
+  });
+}
+
+// 3. CLEAR ALL button: removes all keys after a confirmation prompt
+if (settingsClearAllBtn) {
+  settingsClearAllBtn.addEventListener('click', () => {
+    if (window.confirm('Clear all stored API keys?')) {
+      clearPuppetKeys();
+      ['groq', 'gemini', 'openai'].forEach(p => {
+        if (keyInputs[p]) keyInputs[p].value = '';
+        setFieldStatus(p, 'grey', 'Empty');
+      });
+      updateModeBadges();
+      terminal.appendLine('[ok] keys cleared', 'ok-line');
+    }
+  });
+}
+
+// Open modal via settings button
+if (settingsToggleBtn && settingsModal) {
+  settingsToggleBtn.addEventListener('click', () => {
+    if (firstLaunchBanner) {
+      firstLaunchBanner.classList.add('hidden');
+    }
+    populateKeysForm();
+    settingsModal.classList.remove('hidden');
+  });
+}
+
+// Close modal via X button
+if (settingsCloseBtn && settingsModal) {
+  settingsCloseBtn.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+  });
+}
+
+// Close modal via outside click
+if (settingsModal) {
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) {
+      settingsModal.classList.add('hidden');
+    }
+  });
+}
+
+// Close modal via ESC key
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
+    settingsModal.classList.add('hidden');
+  }
+});
+
+// Preferred Provider change listener
+if (settingsProviderSelect) {
+  settingsProviderSelect.addEventListener('change', (e) => {
+    const val = e.target.value;
+    assistant.setPreferredProvider(val);
+    updateModeBadges();
+  });
+}
+
+// Header & Mic Dock HQ toggle buttons
+if (hqListeningToggleBtn) {
+  hqListeningToggleBtn.addEventListener('click', toggleHqListening);
+}
+if (micHqTogglePill) {
+  micHqTogglePill.addEventListener('click', toggleHqListening);
+}
+updateHqUi(assistant.isHqListening);
+
+// 8. First launch: if no keys exist, open the panel automatically once
+const initialKeys = getApiKeys();
+const hasAnyKeys = Boolean(initialKeys.groq || initialKeys.gemini || initialKeys.openai);
+const hasSeenFirstLaunch = typeof localStorage !== 'undefined' && localStorage.getItem('puppet_keys_first_launch_seen');
+
+if (!hasAnyKeys && !hasSeenFirstLaunch) {
+  if (firstLaunchBanner) {
+    firstLaunchBanner.classList.remove('hidden');
+  }
+  populateKeysForm();
+  if (settingsModal) {
+    settingsModal.classList.remove('hidden');
+  }
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('puppet_keys_first_launch_seen', 'true');
+  }
+}
+
 // Live Clock with Date (Top Bar)
 const liveClockTime = document.getElementById('live-clock-time');
 const liveClockDate = document.getElementById('live-clock-date');
@@ -1021,9 +1313,18 @@ if (camActivateDirectBtn) {
 }
 
 // Simulator Drawer & Buttons
-simToggleBtn.addEventListener('click', () => {
-  simDrawer.classList.toggle('hidden');
-});
+if (simToggleBtn) {
+  simToggleBtn.addEventListener('click', () => {
+    if (simDrawer) simDrawer.classList.toggle('hidden');
+  });
+}
+
+const simCloseBtn = document.getElementById('sim-close-btn');
+if (simCloseBtn) {
+  simCloseBtn.addEventListener('click', () => {
+    if (simDrawer) simDrawer.classList.add('hidden');
+  });
+}
 
 simButtons.forEach(btn => {
   btn.addEventListener('click', () => {

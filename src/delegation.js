@@ -320,7 +320,7 @@ export class DelegationManager {
     let result = '';
     let isAiGenerated = false;
 
-    const hasAiKey = this.assistant && this.assistant.isAiMode && this.assistant.apiKey;
+    const hasAiKey = Boolean(this.assistant && (this.assistant.hasAnyAiKey || this.assistant.isAiMode));
     if (hasAiKey) {
       try {
         result = await this.queryAiRole(config, command, lang);
@@ -385,12 +385,9 @@ export class DelegationManager {
   }
 
   /**
-   * Queries Gemini with the agent's role prompt
+   * Queries AI with the agent's role prompt across available providers
    */
   async queryAiRole(config, userQuery, lang) {
-    const apiKey = this.assistant.apiKey;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
     let roleSystem = config.rolePrompt;
     if (lang === 'ur') {
       roleSystem += ' Reply ONLY in Urdu, in 1 to 2 short spoken sentences, using proper Arabic script. No markdown, no emojis.';
@@ -398,35 +395,14 @@ export class DelegationManager {
       roleSystem += ' Reply ONLY in Pashto, in 1 to 2 short spoken sentences, using proper Arabic script. No markdown, no emojis.';
     }
 
-    const payload = {
-      systemInstruction: {
-        parts: [{ text: roleSystem }]
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userQuery || `Execute task for ${config.name}` }]
-        }
-      ]
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error(`AI request status ${response.status}`);
+    if (this.assistant && typeof this.assistant.queryAiMultiProvider === 'function') {
+      return await this.assistant.queryAiMultiProvider({
+        prompt: userQuery || `Execute task for ${config.name}`,
+        systemPrompt: roleSystem
+      });
     }
 
-    const data = await response.json();
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidate) {
-      throw new Error('No candidate content returned');
-    }
-
-    return candidate.replace(/[*_#`~]/g, '').trim();
+    throw new Error('No AI assistant provider available');
   }
 
   clearPendingLogs() {
