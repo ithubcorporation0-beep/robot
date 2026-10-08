@@ -989,6 +989,215 @@ if (settingsClearAllBtn) {
   });
 }
 
+// Tabs Navigation in Settings Modal
+const settingsTabBtns = document.querySelectorAll('.settings-tab-btn');
+const settingsTabPanes = document.querySelectorAll('.settings-tab-pane');
+
+settingsTabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.getAttribute('data-tab');
+    settingsTabBtns.forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
+    settingsTabPanes.forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+    const pane = document.getElementById(targetId);
+    if (pane) pane.classList.add('active');
+  });
+});
+
+// Sync current application state into Settings modal controls
+function populateSettingsState() {
+  // 1. Voice Language buttons
+  const lang = assistant.currentLang || 'en';
+  ['en', 'ur', 'ps'].forEach(l => {
+    const btn = document.getElementById(`settings-lang-${l}`);
+    if (btn) btn.classList.toggle('active', l === lang);
+  });
+
+  // 2. Sound Output toggle
+  const soundBtn = document.getElementById('settings-toggle-sound');
+  if (soundBtn) {
+    const isSound = Boolean(robotVoice && robotVoice.enabled);
+    soundBtn.textContent = isSound ? 'SOUND: ON' : 'SOUND: OFF';
+    soundBtn.classList.toggle('active', isSound);
+  }
+
+  // 3. HQ Mic toggle
+  const hqBtn = document.getElementById('settings-toggle-hq');
+  if (hqBtn) {
+    const isHq = Boolean(assistant && assistant.isHqListening);
+    hqBtn.textContent = isHq ? 'HQ MIC: ON' : 'HQ MIC: OFF';
+    hqBtn.classList.toggle('active', isHq);
+  }
+
+  // 4. Continuous Voice toggle
+  const voiceCmdBtnSettings = document.getElementById('settings-toggle-voicecmd');
+  if (voiceCmdBtnSettings) {
+    const isVoice = Boolean(voiceCommander && voiceCommander.isActive);
+    voiceCmdBtnSettings.textContent = isVoice ? 'VOICE: ON' : 'VOICE: OFF';
+    voiceCmdBtnSettings.classList.toggle('active', isVoice);
+  }
+
+  // 5. Wake Word toggle
+  const wakewordBtnSettings = document.getElementById('settings-toggle-wakeword');
+  if (wakewordBtnSettings) {
+    const isWake = Boolean(voiceCommander && voiceCommander.wakeWordEnabled);
+    wakewordBtnSettings.textContent = isWake ? 'WAKE WORD: ON' : 'WAKE WORD: OFF';
+    wakewordBtnSettings.classList.toggle('active', isWake);
+  }
+
+  // 6. Camera toggle
+  const camBtn = document.getElementById('settings-toggle-camera');
+  if (camBtn) {
+    const isCam = Boolean(tracker && tracker.isCameraActive);
+    camBtn.textContent = isCam ? 'STOP CAMERA' : 'START CAMERA';
+    camBtn.classList.toggle('active', isCam);
+  }
+
+  // 7. Simulator toggle
+  const simBtn = document.getElementById('settings-toggle-sim');
+  if (simBtn) {
+    const isSimOpen = Boolean(simDrawer && !simDrawer.classList.contains('hidden'));
+    simBtn.textContent = isSimOpen ? 'DRAWER: OPEN' : 'SIMULATOR';
+    simBtn.classList.toggle('active', isSimOpen);
+  }
+
+  // 8. Reel toggle
+  const reelBtn = document.getElementById('settings-toggle-reel');
+  if (reelBtn) {
+    const isReel = Boolean(appContainer && appContainer.classList.contains('reel-mode'));
+    reelBtn.textContent = isReel ? 'REEL: ACTIVE' : '9:16 REEL';
+    reelBtn.classList.toggle('active', isReel);
+  }
+
+  // 9. Fullscreen toggle
+  const fullBtn = document.getElementById('settings-toggle-fullscreen');
+  if (fullBtn) {
+    const isFull = Boolean(document.fullscreenElement);
+    fullBtn.textContent = isFull ? 'EXIT FULLSCREEN' : 'FULLSCREEN';
+    fullBtn.classList.toggle('active', isFull);
+  }
+
+  // 10. Memory stats
+  const notesCountEl = document.getElementById('settings-memory-notes-count');
+  if (notesCountEl) notesCountEl.textContent = String(memory.getNotes().length);
+
+  const tasksCountEl = document.getElementById('settings-memory-tasks-count');
+  if (tasksCountEl) tasksCountEl.textContent = String(memory.getTasks().length);
+}
+
+// Wire Settings modal controls for Voice, Vision, and Memory
+['en', 'ur', 'ps'].forEach(l => {
+  const btn = document.getElementById(`settings-lang-${l}`);
+  if (btn) {
+    btn.addEventListener('click', () => {
+      assistant.setLanguage(l);
+      updateLangUI(l);
+      populateSettingsState();
+      terminal.appendLine(`[ok] assistant language changed to: ${l.toUpperCase()}`, 'ok-line');
+    });
+  }
+});
+
+const settingsToggleSound = document.getElementById('settings-toggle-sound');
+if (settingsToggleSound) {
+  settingsToggleSound.addEventListener('click', () => {
+    const isEnabled = robotVoice.toggle();
+    sound.enabled = isEnabled;
+    soundToggleBtn.innerHTML = `<span class="btn-icon">${isEnabled ? '🔊' : '🔇'}</span>`;
+    soundToggleBtn.title = isEnabled ? 'Voice output: ON' : 'Voice output: OFF (Click to enable)';
+    populateSettingsState();
+    terminal.appendLine(`[ok] voice sound output: ${isEnabled ? 'ON' : 'OFF'}`, 'ok-line');
+  });
+}
+
+const settingsToggleHq = document.getElementById('settings-toggle-hq');
+if (settingsToggleHq) {
+  settingsToggleHq.addEventListener('click', () => {
+    toggleHqListening();
+    populateSettingsState();
+  });
+}
+
+const settingsToggleVoiceCmd = document.getElementById('settings-toggle-voicecmd');
+if (settingsToggleVoiceCmd) {
+  settingsToggleVoiceCmd.addEventListener('click', () => {
+    voiceCommander.toggle();
+    populateSettingsState();
+  });
+}
+
+const settingsToggleWakeWord = document.getElementById('settings-toggle-wakeword');
+if (settingsToggleWakeWord) {
+  settingsToggleWakeWord.addEventListener('click', () => {
+    const isEnabled = voiceCommander.toggleWakeWord();
+    if (wakewordToggleBtn) wakewordToggleBtn.classList.toggle('active', isEnabled);
+    if (wakewordToggleText) wakewordToggleText.textContent = isEnabled ? 'WAKE WORD: ON' : 'WAKE WORD: OFF';
+    populateSettingsState();
+    terminal.appendLine(
+      isEnabled ? '[ok] wake word required: ON ("hey puppet" / "ہے پپٹ")' : '[ok] wake word required: OFF',
+      'ok-line'
+    );
+  });
+}
+
+const settingsToggleCam = document.getElementById('settings-toggle-camera');
+if (settingsToggleCam) {
+  settingsToggleCam.addEventListener('click', async () => {
+    await toggleCamera();
+    populateSettingsState();
+  });
+}
+
+const settingsToggleSim = document.getElementById('settings-toggle-sim');
+if (settingsToggleSim) {
+  settingsToggleSim.addEventListener('click', () => {
+    if (simDrawer) simDrawer.classList.toggle('hidden');
+    populateSettingsState();
+  });
+}
+
+const settingsToggleReel = document.getElementById('settings-toggle-reel');
+if (settingsToggleReel) {
+  settingsToggleReel.addEventListener('click', () => {
+    toggleReelMode();
+    populateSettingsState();
+  });
+}
+
+const settingsToggleFullscreen = document.getElementById('settings-toggle-fullscreen');
+if (settingsToggleFullscreen) {
+  settingsToggleFullscreen.addEventListener('click', () => {
+    toggleFullscreen();
+    setTimeout(populateSettingsState, 150);
+  });
+}
+
+const settingsClearMemoryBtn = document.getElementById('settings-clear-memory-btn');
+if (settingsClearMemoryBtn) {
+  settingsClearMemoryBtn.addEventListener('click', () => {
+    if (window.confirm('Are you sure you want to clear all memory, notes, and conversation history?')) {
+      memory.clearEverything();
+      populateSettingsState();
+      terminal.appendLine('[ok] memory wiped: notes, user name, and conversation history cleared.', 'ok-line');
+    }
+  });
+}
+
+const settingsClearTasksBtn = document.getElementById('settings-clear-tasks-btn');
+if (settingsClearTasksBtn) {
+  settingsClearTasksBtn.addEventListener('click', () => {
+    if (window.confirm('Clear all tasks from the checklist?')) {
+      memory.clearTasks();
+      populateSettingsState();
+      terminal.appendLine('[task] all tasks cleared.', 'warn-line');
+    }
+  });
+}
+
 // Open modal via settings button
 if (settingsToggleBtn && settingsModal) {
   settingsToggleBtn.addEventListener('click', () => {
@@ -996,6 +1205,7 @@ if (settingsToggleBtn && settingsModal) {
       firstLaunchBanner.classList.add('hidden');
     }
     populateKeysForm();
+    populateSettingsState();
     settingsModal.classList.remove('hidden');
   });
 }
@@ -1020,6 +1230,24 @@ if (settingsModal) {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && settingsModal && !settingsModal.classList.contains('hidden')) {
     settingsModal.classList.add('hidden');
+  }
+});
+
+// Keyboard shortcut: Press S to toggle Settings Modal (when not typing in an input)
+window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) {
+    return;
+  }
+  if (e.key === 's' || e.key === 'S') {
+    e.preventDefault();
+    if (settingsModal.classList.contains('hidden')) {
+      if (firstLaunchBanner) firstLaunchBanner.classList.add('hidden');
+      populateKeysForm();
+      populateSettingsState();
+      settingsModal.classList.remove('hidden');
+    } else {
+      settingsModal.classList.add('hidden');
+    }
   }
 });
 

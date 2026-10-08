@@ -103,8 +103,9 @@
           <span class="btn-text" id="hq-listening-text">HQ MIC: OFF</span>
         </button>
         <!-- 1. Settings Gear Icon Button: at the top right, next to the speaker button -->
-        <button id="settings-toggle-btn" class="ctrl-btn icon-only" title="API KEYS">
+        <button id="settings-toggle-btn" class="ctrl-btn settings-btn highlight-btn" title="System Settings & API Keys (Press S)">
           <span class="btn-icon">⚙️</span>
+          <span class="btn-text">SETTINGS</span>
         </button>
         <!-- Speaker / Voice Output Button: starts OFF until clicked -->
         <button id="sound-toggle-btn" class="ctrl-btn icon-only" title="Voice output: OFF (Click to enable)">
@@ -480,15 +481,35 @@
       </div>
     </div>
 
-  <!-- API KEYS Modal Panel -->
+  <!-- SYSTEM SETTINGS & API KEYS Modal Panel -->
   <div id="settings-modal" class="hud-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
     <div class="hud-modal-card keys-modal-card">
       <div class="hud-modal-header">
         <div class="hud-modal-title-wrap">
           <span class="panel-accent-bar orange"></span>
-          <h3 id="settings-modal-title" class="hud-modal-title">API KEYS</h3>
+          <h3 id="settings-modal-title" class="hud-modal-title">SYSTEM SETTINGS // API KEYS & OPTIONS</h3>
         </div>
         <button id="settings-close-btn" class="hud-modal-close" title="Close (ESC)">✕</button>
+      </div>
+
+      <!-- Settings Tabs Navigation Bar -->
+      <div class="settings-tabs-nav" role="tablist">
+        <button type="button" class="settings-tab-btn active" data-tab="tab-keys" role="tab" aria-selected="true">
+          <span class="tab-icon">🔑</span>
+          <span class="tab-label">API KEYS</span>
+        </button>
+        <button type="button" class="settings-tab-btn" data-tab="tab-voice" role="tab" aria-selected="false">
+          <span class="tab-icon">🎙️</span>
+          <span class="tab-label">VOICE & AUDIO</span>
+        </button>
+        <button type="button" class="settings-tab-btn" data-tab="tab-vision" role="tab" aria-selected="false">
+          <span class="tab-icon">📷</span>
+          <span class="tab-label">VISION & DISPLAY</span>
+        </button>
+        <button type="button" class="settings-tab-btn" data-tab="tab-memory" role="tab" aria-selected="false">
+          <span class="tab-icon">🧠</span>
+          <span class="tab-label">MEMORY & DATA</span>
+        </button>
       </div>
 
       <div class="hud-modal-body">
@@ -498,81 +519,219 @@
           <span class="first-launch-text">Add at least one key to enable AI answers. Built-in mode works without keys.</span>
         </div>
 
-        <!-- 4. Preferred Chat Provider Dropdown -->
-        <div class="settings-field-group">
-          <label for="settings-provider-select" class="settings-label">
-            Preferred chat provider
-            <span class="settings-subtext">Auto tries Groq, then Gemini, then OpenAI, then built-in answers.</span>
-          </label>
-          <select id="settings-provider-select" class="hud-select">
-            <option value="auto">Auto</option>
-            <option value="groq">Groq</option>
-            <option value="gemini">Gemini</option>
-            <option value="openai">OpenAI</option>
-          </select>
-        </div>
+        <!-- ================= TAB 1: API KEYS ================= -->
+        <div class="settings-tab-pane active" id="tab-keys" role="tabpanel">
+          <!-- 4. Preferred Chat Provider Dropdown -->
+          <div class="settings-field-group">
+            <label for="settings-provider-select" class="settings-label">
+              Preferred chat provider
+              <span class="settings-subtext">Auto tries Groq, then Gemini, then OpenAI, then built-in answers.</span>
+            </label>
+            <select id="settings-provider-select" class="hud-select">
+              <option value="auto">Auto</option>
+              <option value="groq">Groq</option>
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
 
-        <!-- 2. Three Fields: Label, Password Input, Show/Hide Eye Button, Test Button, Status Dot -->
-        <!-- Field 1: Groq API key -->
-        <div class="key-field-block">
-          <div class="key-field-header">
-            <label for="key-input-groq" class="key-field-label">Groq API key</label>
-            <div class="key-status-indicator" id="status-container-groq">
-              <span class="status-dot dot-grey" id="status-dot-groq"></span>
-              <span class="status-msg" id="status-msg-groq">Empty</span>
+          <!-- 2. Three Fields: Label, Password Input, Show/Hide Eye Button, Test Button, Status Dot -->
+          <!-- Field 1: Groq API key -->
+          <div class="key-field-block">
+            <div class="key-field-header">
+              <label for="key-input-groq" class="key-field-label">Groq API key</label>
+              <div class="key-status-indicator" id="status-container-groq">
+                <span class="status-dot dot-grey" id="status-dot-groq"></span>
+                <span class="status-msg" id="status-msg-groq">Empty</span>
+              </div>
+            </div>
+            <div class="key-input-row">
+              <input type="password" id="key-input-groq" class="key-password-input" placeholder="Enter Groq API Key..." autocomplete="off" spellcheck="false" />
+              <button type="button" class="key-vis-btn" id="toggle-vis-groq" title="Show/hide key">👁️</button>
+              <button type="button" class="key-test-btn" id="test-btn-groq" title="Test Groq key">TEST</button>
             </div>
           </div>
-          <div class="key-input-row">
-            <input type="password" id="key-input-groq" class="key-password-input" placeholder="Enter Groq API Key..." autocomplete="off" spellcheck="false" />
-            <button type="button" class="key-vis-btn" id="toggle-vis-groq" title="Show/hide key">👁️</button>
-            <button type="button" class="key-test-btn" id="test-btn-groq" title="Test Groq key">TEST</button>
-          </div>
-        </div>
 
-        <!-- Field 2: Google AI Studio (Gemini) API key -->
-        <div class="key-field-block">
-          <div class="key-field-header">
-            <label for="key-input-gemini" class="key-field-label">Google AI Studio (Gemini) API key</label>
-            <div class="key-status-indicator" id="status-container-gemini">
-              <span class="status-dot dot-grey" id="status-dot-gemini"></span>
-              <span class="status-msg" id="status-msg-gemini">Empty</span>
+          <!-- Field 2: Google AI Studio (Gemini) API key -->
+          <div class="key-field-block">
+            <div class="key-field-header">
+              <label for="key-input-gemini" class="key-field-label">Google AI Studio (Gemini) API key</label>
+              <div class="key-status-indicator" id="status-container-gemini">
+                <span class="status-dot dot-grey" id="status-dot-gemini"></span>
+                <span class="status-msg" id="status-msg-gemini">Empty</span>
+              </div>
+            </div>
+            <div class="key-input-row">
+              <input type="password" id="key-input-gemini" class="key-password-input" placeholder="Enter Gemini API Key..." autocomplete="off" spellcheck="false" />
+              <button type="button" class="key-vis-btn" id="toggle-vis-gemini" title="Show/hide key">👁️</button>
+              <button type="button" class="key-test-btn" id="test-btn-gemini" title="Test Gemini key">TEST</button>
             </div>
           </div>
-          <div class="key-input-row">
-            <input type="password" id="key-input-gemini" class="key-password-input" placeholder="Enter Gemini API Key..." autocomplete="off" spellcheck="false" />
-            <button type="button" class="key-vis-btn" id="toggle-vis-gemini" title="Show/hide key">👁️</button>
-            <button type="button" class="key-test-btn" id="test-btn-gemini" title="Test Gemini key">TEST</button>
-          </div>
-        </div>
 
-        <!-- Field 3: OpenAI API key -->
-        <div class="key-field-block">
-          <div class="key-field-header">
-            <label for="key-input-openai" class="key-field-label">OpenAI API key</label>
-            <div class="key-status-indicator" id="status-container-openai">
-              <span class="status-dot dot-grey" id="status-dot-openai"></span>
-              <span class="status-msg" id="status-msg-openai">Empty</span>
+          <!-- Field 3: OpenAI API key -->
+          <div class="key-field-block">
+            <div class="key-field-header">
+              <label for="key-input-openai" class="key-field-label">OpenAI API key</label>
+              <div class="key-status-indicator" id="status-container-openai">
+                <span class="status-dot dot-grey" id="status-dot-openai"></span>
+                <span class="status-msg" id="status-msg-openai">Empty</span>
+              </div>
+            </div>
+            <div class="key-input-row">
+              <input type="password" id="key-input-openai" class="key-password-input" placeholder="Enter OpenAI API Key..." autocomplete="off" spellcheck="false" />
+              <button type="button" class="key-vis-btn" id="toggle-vis-openai" title="Show/hide key">👁️</button>
+              <button type="button" class="key-test-btn" id="test-btn-openai" title="Test OpenAI key">TEST</button>
             </div>
           </div>
-          <div class="key-input-row">
-            <input type="password" id="key-input-openai" class="key-password-input" placeholder="Enter OpenAI API Key..." autocomplete="off" spellcheck="false" />
-            <button type="button" class="key-vis-btn" id="toggle-vis-openai" title="Show/hide key">👁️</button>
-            <button type="button" class="key-test-btn" id="test-btn-openai" title="Test OpenAI key">TEST</button>
+
+          <!-- 7. Security Notice -->
+          <div class="keys-security-notice">
+            <span class="notice-icon">🔒</span>
+            <span class="notice-text">Keys stay in this browser only. Do not use this on a shared computer. Do not publish this app online with keys.</span>
           </div>
         </div>
 
-        <!-- 7. Security Notice -->
-        <div class="keys-security-notice">
-          <span class="notice-icon">🔒</span>
-          <span class="notice-text">Keys stay in this browser only. Do not use this on a shared computer. Do not publish this app online with keys.</span>
+        <!-- ================= TAB 2: VOICE & AUDIO ================= -->
+        <div class="settings-tab-pane" id="tab-voice" role="tabpanel">
+          <!-- Voice Language Selector -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Assistant Language</span>
+              <span class="setting-desc">Sets speech recognition, system prompt dialect, and text direction.</span>
+            </div>
+            <div class="settings-lang-group">
+              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="en" id="settings-lang-en">EN</button>
+              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="ur" id="settings-lang-ur">اردو</button>
+              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="ps" id="settings-lang-ps">پښتو</button>
+            </div>
+          </div>
+
+          <!-- Voice Sound Output Toggle -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Robot Voice Speech Output</span>
+              <span class="setting-desc">Synthesize vocal answers out loud (Browser TTS or OpenAI audio).</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-sound">SOUND: OFF</button>
+          </div>
+
+          <!-- HQ Listening (Groq Whisper) -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">HQ Audio Listening (Groq Whisper)</span>
+              <span class="setting-desc">High-precision multilingual transcription via Groq Whisper Large v3.</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-hq">HQ MIC: OFF</button>
+          </div>
+
+          <!-- Continuous Voice Commands Toggle -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Continuous Voice Listening</span>
+              <span class="setting-desc">Continuous background listening for voice commands and delegation.</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-voicecmd">VOICE: OFF</button>
+          </div>
+
+          <!-- Wake Word Requirement Toggle -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Wake Word Requirement</span>
+              <span class="setting-desc">Require "Hey Puppet" or "ہے پپٹ" before executing voice commands.</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-wakeword">WAKE WORD: OFF</button>
+          </div>
+        </div>
+
+        <!-- ================= TAB 3: VISION & DISPLAY ================= -->
+        <div class="settings-tab-pane" id="tab-vision" role="tabpanel">
+          <!-- Camera Tracking Toggle -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Webcam Optical Hand Tracking</span>
+              <span class="setting-desc">Tracks 21 hand joints & 5 fingertips using MediaPipe Vision.</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-camera">START CAMERA</button>
+          </div>
+
+          <!-- Gesture Simulator -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Interactive Gesture Simulator</span>
+              <span class="setting-desc">Simulate gestures with keys 1 (Idle), 2 (Idea), 3 (Lifting).</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-sim">SIMULATOR</button>
+          </div>
+
+          <!-- 9:16 Reel Mode -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Vertical Reel Mode (9:16)</span>
+              <span class="setting-desc">Optimizes viewport layout for mobile reels, TikTok, and shorts.</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-reel">9:16 REEL</button>
+          </div>
+
+          <!-- Fullscreen -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Fullscreen Command Center</span>
+              <span class="setting-desc">Expands interface to immersive full display mode (Press F).</span>
+            </div>
+            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-fullscreen">FULLSCREEN</button>
+          </div>
+        </div>
+
+        <!-- ================= TAB 4: MEMORY & DATA ================= -->
+        <div class="settings-tab-pane" id="tab-memory" role="tabpanel">
+          <!-- Memory Statistics -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Persistent Local Memory</span>
+              <span class="setting-desc">Saved notes and user profile stored securely in browser localStorage.</span>
+            </div>
+            <div class="settings-stat-badge">
+              <span class="stat-num" id="settings-memory-notes-count">0</span>
+              <span class="stat-unit">NOTES</span>
+            </div>
+          </div>
+
+          <!-- Task Items Count -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Interactive Task Checklist</span>
+              <span class="setting-desc">Total tasks saved and tracked in the task manager.</span>
+            </div>
+            <div class="settings-stat-badge">
+              <span class="stat-num" id="settings-memory-tasks-count">0</span>
+              <span class="stat-unit">TASKS</span>
+            </div>
+          </div>
+
+          <!-- Memory Clear Buttons -->
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Clear Memory & Conversation</span>
+              <span class="setting-desc">Wipes stored notes, remembered name, and recent 50 messages.</span>
+            </div>
+            <button type="button" class="ctrl-btn danger-btn" id="settings-clear-memory-btn">CLEAR MEMORY</button>
+          </div>
+
+          <div class="setting-item-row">
+            <div class="setting-info-block">
+              <span class="setting-title">Clear All Checklist Tasks</span>
+              <span class="setting-desc">Removes all pending and completed items from the task list.</span>
+            </div>
+            <button type="button" class="ctrl-btn danger-btn" id="settings-clear-tasks-btn">CLEAR TASKS</button>
+          </div>
         </div>
       </div>
 
       <!-- 3. Actions: CLEAR ALL & SAVE -->
       <div class="hud-modal-footer keys-modal-footer">
-        <button type="button" id="settings-clear-all-btn" class="ctrl-btn secondary danger-btn" title="Remove all keys from browser storage">CLEAR ALL</button>
+        <button type="button" id="settings-clear-all-btn" class="ctrl-btn secondary danger-btn" title="Remove all keys from browser storage">CLEAR ALL KEYS</button>
         <div class="footer-actions-right">
-          <button type="button" id="settings-save-btn" class="ctrl-btn primary-glow">SAVE</button>
+          <button type="button" id="settings-save-btn" class="ctrl-btn primary-glow">SAVE KEYS & SETTINGS</button>
         </div>
       </div>
     </div>
