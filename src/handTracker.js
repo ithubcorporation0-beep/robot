@@ -9,6 +9,7 @@ export class HandTracker {
     this.onTrackingUpdate = options.onTrackingUpdate || (() => {});
     this.onCameraStart = options.onCameraStart || (() => {});
     this.onCameraStop = options.onCameraStop || (() => {});
+    this.onHandLost = options.onHandLost || (() => {});
 
     // Ensure <video> attributes are explicitly assigned for browser autoplay compatibility
     this.video.autoplay = true;
@@ -29,11 +30,23 @@ export class HandTracker {
     this.isRunning = false;
     this.isCameraActive = false;
     this.simulatedMode = true; // Active until camera stream starts
-    this.simulatedGesture = 'OPEN_HAND'; // 'OPEN_HAND' | 'INDEX_UP' | 'FIST'
+    this.simulatedGesture = 'OPEN_HAND'; // 'OPEN_HAND' | 'INDEX_UP' | 'FIST' | 'NO_HAND'
     this.currentGesture = 'OPEN_HAND'; // 'OPEN_HAND' | 'INDEX_UP' | 'FIST'
     this.lastVideoTime = -1;
-    this.gestureDebounceCounter = 0;
+
+    // Debounce state (~300ms hold required before state changes)
     this.pendingGesture = null;
+    this.pendingGestureStartTime = 0;
+    this.holdDurationThreshold = 300; // 300 ms hold required
+    this.detectedGesture = 'OPEN_HAND';
+
+    // Hand detection loss tracking (1s timeout)
+    this.lastHandDetectedTime = performance.now();
+    this.handLostTriggered = false;
+
+    // Light moving average filter for smoothing fingertip positions (4 samples ~60ms)
+    this.fingertipHistory = [[], [], [], [], []];
+    this.movingAverageWindow = 4;
 
     // Fingertip landmark indices per specification: 4 (Thumb), 8 (Index), 12 (Middle), 16 (Ring), 20 (Pinky)
     this.fingertipIndices = [4, 8, 12, 16, 20];
@@ -44,8 +57,82 @@ export class HandTracker {
     window.addEventListener('resize', this.onResize);
   }
 
+  get detectedGestureLabel() {
+    if (!this.lastHandDetectedTime || this.handLostTriggered || this.detectedGesture === 'NONE' || this.detectedGesture === 'NO_HAND') {
+      return 'NO HAND DETECTED';
+    }
+    switch (this.detectedGesture) {
+      case 'INDEX_UP':
+        return 'ONE INDEX FINGER UP';
+      case 'FIST':
+        return 'CLOSED FIST / PINCH';
+      case 'OPEN_HAND':
+        return 'OPEN HAND';
+      default:
+        return this.detectedGesture || 'OPEN HAND';
+    }
+  }
+
+  smoothFingertips(rawFingertips) {
+    if (!rawFingertips || rawFingertips.length === 0) {
+      this.clearFingertipHistory();
+      return [];
+    }
+
+    return rawFingertips.map((pt, i) => {
+      if (!this.fingertipHistory[i]) {
+        this.fingertipHistory[i] = [];
+      }
+      const hist = this.fingertipHistory[i];
+      hist.push({ x: pt.x, y: pt.y });
+      if (hist.length > this.movingAverageWindow) {
+        hist.shift();
+      }
+
+      let sumX = 0;
+      let sumY = 0;
+      for (let j = 0; j < hist.length; j++) {
+        sumX += hist[j].x;
+        sumY += hist[j].y;
+      }
+
+      return {
+        x: sumX / hist.length,
+        y: sumY / hist.length,
+        landmarkIndex: pt.landmarkIndex
+      };
+    });
+  }
+
+  clearFingertipHistory() {
+    this.fingertipHistory = [[], [], [], [], []];
+  }
+
+  getVideoRect() {
+    if (this.video && typeof this.video.getBoundingClientRect === 'function') {
+      const rect = this.video.getBoundingClientRect();
+      if (rect.width > 20 && rect.height > 20) {
+        return rect;
+      }
+    }
+    // Invisible camera fallback: anchor to standard corner region
+    const boxW = 240;
+    const boxH = 180;
+    const isReel = typeof document !== 'undefined' && document.getElementById('app')?.classList.contains('reel-mode');
+    const screenW = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const screenH = typeof window !== 'undefined' ? window.innerHeight : 720;
+    const left = isReel ? screenW - boxW - 20 : screenW - boxW - 24;
+    const top = isReel ? 90 : screenH - boxH - 24;
+    return {
+      left,
+      top,
+      width: boxW,
+      height: boxH
+    };
+  }
+
   resizeOverlay() {
-    const rect = this.video.getBoundingClientRect();
+    const rect = this.getVideoRect();
     if (rect.width && rect.height) {
       this.overlayCanvas.width = rect.width;
       this.overlayCanvas.height = rect.height;
@@ -146,10 +233,35 @@ export class HandTracker {
 
   setSimulatedGesture(gesture) {
     this.simulatedGesture = gesture;
-    this.processDetectedGesture(gesture);
+    const now = performance.now();
+    if (gesture === 'NO_HAND') {
+      this.detectedGesture = 'NONE';
+      this.fingertipsScreen = [];
+      this.clearFingertipHistory();
+      this.lastHandDetectedTime = now;
+      this.handLostTriggered = false;
+    } else {
+      this.lastHandDetectedTime = now;
+      this.handLostTriggered = false;
+      this.debounceGesture(gesture, now);
+    }
+  }
+
+  checkHandLostTimeout(now) {
+    const elapsed = now - this.lastHandDetectedTime;
+    if (elapsed >= 1000 && !this.handLostTriggered) {
+      this.handLostTriggered = true;
+      this.currentGesture = 'OPEN_HAND';
+      this.pendingGesture = null;
+      this.pendingGestureStartTime = 0;
+      this.detectedGesture = 'NONE';
+      this.onGestureChange('IDLE', 'OPEN HAND');
+      if (this.onHandLost) this.onHandLost();
+    }
   }
 
   update(timestamp) {
+    const now = typeof timestamp === 'number' && timestamp > 0 ? timestamp : performance.now();
     this.resizeOverlay();
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
@@ -157,11 +269,13 @@ export class HandTracker {
     if (this.isCameraActive && this.landmarker && this.video.readyState >= 2) {
       if (this.video.currentTime !== this.lastVideoTime) {
         this.lastVideoTime = this.video.currentTime;
-        const results = this.landmarker.detectForVideo(this.video, timestamp);
+        const results = this.landmarker.detectForVideo(this.video, now);
 
         if (results && results.landmarks && results.landmarks.length > 0) {
           const landmarks = results.landmarks[0];
-          this.processLandmarks(landmarks);
+          this.lastHandDetectedTime = now;
+          this.handLostTriggered = false;
+          this.processLandmarks(landmarks, now);
           this.drawCameraOverlay(landmarks);
           return;
         }
@@ -170,20 +284,43 @@ export class HandTracker {
 
     // Fallback: When camera has no hand or in simulator mode
     if (this.simulatedMode) {
-      this.generateSimulatedHand(timestamp);
+      if (this.simulatedGesture === 'NO_HAND') {
+        this.fingertipsScreen = [];
+        this.clearFingertipHistory();
+        this.detectedGesture = 'NONE';
+        this.checkHandLostTimeout(now);
+        this.onTrackingUpdate({
+          handDetected: false,
+          fingertips: [],
+          gesture: 'NONE',
+          detectedLabel: 'NO HAND DETECTED'
+        });
+      } else {
+        this.lastHandDetectedTime = now;
+        this.handLostTriggered = false;
+        this.generateSimulatedHand(now);
+      }
     } else {
       // Camera active but no hand in frame
       this.fingertipsScreen = [];
-      this.onTrackingUpdate({ handDetected: false, fingertips: [] });
+      this.clearFingertipHistory();
+      this.detectedGesture = 'NONE';
+      this.checkHandLostTimeout(now);
+      this.onTrackingUpdate({
+        handDetected: false,
+        fingertips: [],
+        gesture: 'NONE',
+        detectedLabel: 'NO HAND DETECTED'
+      });
     }
   }
 
-  processLandmarks(landmarks) {
-    const videoRect = this.video.getBoundingClientRect();
+  processLandmarks(landmarks, timestamp) {
+    const videoRect = this.getVideoRect();
 
-    // 1. Compute Screen Coordinates for the 5 Fingertips (Mirrored)
+    // 1. Compute Raw Screen Coordinates for the 5 Fingertips (Mirrored)
     // Mirrored display: X = 1.0 - landmark.x
-    this.fingertipsScreen = this.fingertipIndices.map(idx => {
+    const rawFingertips = this.fingertipIndices.map(idx => {
       const lm = landmarks[idx];
       return {
         x: videoRect.left + (1.0 - lm.x) * videoRect.width,
@@ -192,18 +329,20 @@ export class HandTracker {
       };
     });
 
-    // 2. Classify Gesture according to Rules:
-    // - Open hand (all fingers extended) = IDLE
-    // - One index finger up = GENERATING NEW IDEA
-    // - Closed fist or pinch = HEAVY LIFTING
+    // Smooth fingertip positions with a light moving average across frames
+    this.fingertipsScreen = this.smoothFingertips(rawFingertips);
+
+    // 2. Classify Gesture and require continuous ~300ms hold before state change
     const gesture = this.classifyGesture(landmarks);
-    this.debounceGesture(gesture);
+    this.debounceGesture(gesture, timestamp);
 
     this.onTrackingUpdate({
       handDetected: true,
       fingertips: this.fingertipsScreen,
       rawLandmarks: landmarks,
-      gesture: this.currentGesture
+      gesture: this.currentGesture,
+      detectedGesture: this.detectedGesture,
+      detectedLabel: this.detectedGestureLabel
     });
   }
 
@@ -219,9 +358,6 @@ export class HandTracker {
 
     // Check Pinch between Thumb Tip (4) and Index Tip (8)
     const pinchDist = dist(lm[4], lm[8]);
-    if (pinchDist < 0.08) {
-      return 'FIST'; // Pinch triggers HEAVY LIFTING
-    }
 
     // Check extension for fingers 1..4 (Index, Middle, Ring, Pinky)
     // A finger is extended if tip is further from wrist than PIP joint
@@ -233,6 +369,11 @@ export class HandTracker {
     // Check Closed Fist: All 4 main fingers folded
     if (!isIndexExtended && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
       return 'FIST'; // Closed fist triggers HEAVY LIFTING
+    }
+
+    // Check Pinch between Thumb and Index while other fingers folded
+    if (pinchDist < 0.08 && !isMiddleExtended && !isRingExtended && !isPinkyExtended) {
+      return 'FIST'; // Pinch triggers HEAVY LIFTING
     }
 
     // Check One Index Finger Up: Only index extended, others folded
@@ -253,22 +394,30 @@ export class HandTracker {
     return 'OPEN_HAND';
   }
 
-  debounceGesture(newGesture) {
-    if (newGesture === this.currentGesture) {
+  debounceGesture(rawGesture, timestamp) {
+    const now = typeof timestamp === 'number' && timestamp > 0 ? timestamp : performance.now();
+    this.detectedGesture = rawGesture;
+
+    // If candidate gesture is already the committed gesture, reset pending hold timer
+    if (rawGesture === this.currentGesture) {
       this.pendingGesture = null;
-      this.gestureDebounceCounter = 0;
+      this.pendingGestureStartTime = 0;
       return;
     }
 
-    if (newGesture === this.pendingGesture) {
-      this.gestureDebounceCounter++;
-      if (this.gestureDebounceCounter >= 3) { // 3 consecutive frames
-        this.currentGesture = newGesture;
-        this.processDetectedGesture(newGesture);
-      }
+    // If new candidate gesture was detected, start continuous hold timer
+    if (rawGesture !== this.pendingGesture) {
+      this.pendingGesture = rawGesture;
+      this.pendingGestureStartTime = now;
     } else {
-      this.pendingGesture = newGesture;
-      this.gestureDebounceCounter = 1;
+      // Gesture held continuously
+      const heldTime = now - this.pendingGestureStartTime;
+      if (heldTime >= this.holdDurationThreshold) { // 300 ms hold required
+        this.currentGesture = rawGesture;
+        this.pendingGesture = null;
+        this.pendingGestureStartTime = 0;
+        this.processDetectedGesture(rawGesture);
+      }
     }
   }
 
@@ -291,6 +440,7 @@ export class HandTracker {
     const ctx = this.ctx;
     const w = this.overlayCanvas.width;
     const h = this.overlayCanvas.height;
+    const videoRect = this.video.getBoundingClientRect();
 
     // Draw subtle skeleton connections
     const connections = [
@@ -315,11 +465,17 @@ export class HandTracker {
       ctx.stroke();
     });
 
-    // Draw the White Dots on the 5 Fingertips (4, 8, 12, 16, 20) per specification
+    // Draw the White Dots on the 5 Fingertips using smoothed positions
     this.fingertipIndices.forEach((idx, i) => {
-      const lm = landmarks[idx];
-      const x = (1.0 - lm.x) * w;
-      const y = lm.y * h;
+      let x, y;
+      if (this.fingertipsScreen && this.fingertipsScreen[i]) {
+        x = this.fingertipsScreen[i].x - videoRect.left;
+        y = this.fingertipsScreen[i].y - videoRect.top;
+      } else {
+        const lm = landmarks[idx];
+        x = (1.0 - lm.x) * w;
+        y = lm.y * h;
+      }
 
       // Outer glowing ring
       ctx.beginPath();
@@ -351,7 +507,7 @@ export class HandTracker {
     const ctx = this.ctx;
     const w = this.overlayCanvas.width || 250;
     const h = this.overlayCanvas.height || 180;
-    const videoRect = this.video.getBoundingClientRect();
+    const videoRect = this.getVideoRect();
     const time = timestamp / 1000;
 
     // Center base of simulated palm in corner box
@@ -408,8 +564,8 @@ export class HandTracker {
     ctx.fillStyle = 'rgba(0, 229, 255, 0.3)';
     ctx.fill();
 
-    // Map to screen coordinates and draw white dots
-    this.fingertipsScreen = offsets.map((pt, i) => {
+    // Raw fingertip positions
+    const rawFingertips = offsets.map((pt, i) => {
       const tipX = cx + pt.dx;
       const tipY = cy + pt.dy;
 
@@ -433,12 +589,20 @@ export class HandTracker {
       };
     });
 
+    // Smooth fingertip positions with moving average
+    this.fingertipsScreen = this.smoothFingertips(rawFingertips);
+
+    // Apply debounce with hold time
+    this.debounceGesture(this.simulatedGesture, timestamp);
+
     ctx.restore();
 
     this.onTrackingUpdate({
       handDetected: true,
       fingertips: this.fingertipsScreen,
-      gesture: this.simulatedGesture
+      gesture: this.currentGesture,
+      detectedGesture: this.detectedGesture,
+      detectedLabel: this.detectedGestureLabel
     });
   }
 
