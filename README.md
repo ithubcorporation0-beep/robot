@@ -1,32 +1,41 @@
-# 🤖 puppet-agent
+# 🤖 PUPPET-AGENT // AI Voice Assistant
 
-> **Neural Marionette Interface** — A real-time 3D low-poly robot puppet controlled via webcam hand tracking with glowing cybernetic marionette strings.
+> **Interactive 3D Robot AI Voice Assistant** — A real-time, multilingual conversational avatar powered by Three.js and a multi-provider fallback AI engine (Groq, Google Gemini, OpenAI, & built-in offline intelligence).
 
 ![puppet-agent banner](https://img.shields.io/badge/Vite-Vanilla%20JS-646CFF?style=flat&logo=vite)
 ![Three.js](https://img.shields.io/badge/Three.js-WebGL-000000?style=flat&logo=three.js)
-![MediaPipe](https://img.shields.io/badge/MediaPipe-Tasks%20Vision-00e5ff?style=flat)
+![Multi-Provider AI](https://img.shields.io/badge/AI-Groq%20%7C%20Gemini%20%7C%20OpenAI-ff6b00?style=flat)
 
 ---
 
-## 🌟 Features
+## 🌟 Key Features
 
-* **3D Low-Poly Robot Viewport (Three.js)**:
-  * Procedural low-poly robot assembled purely from boxes, cylinders, and spheres without any external 3D model files.
-  * Emissive neon visor, core reactor, and animated antenna with 5-point studio lighting and ground cyber pedestal.
-  * Smooth kinematics easing (`lerp`) across idle breathing, thinking head-tilt, and heavy lifting strain postures.
-* **Optical Hand Tracking (@mediapipe/tasks-vision)**:
-  * Mirrored webcam optical preview in the lower-right corner.
-  * Tracks 21 hand landmarks and renders white glowing dots on the **5 fingertips** (Thumb `4`, Index `8`, Middle `12`, Ring `16`, Pinky `20`).
-* **Glowing Cybernetic Strings**:
-  * Full-screen transparent canvas overlay with glowing orange quadratic bezier curves.
-  * Realistic gravitational sag and tension vibration during heavy strain.
-  * Animated energy pulses traveling down each string from fingertip to robot joint.
-* **Gesture-to-State Rules**:
-  * ✋ **Open Hand** (all 5 fingers extended) ➔ **IDLE**: Robot stands still with slow rhythmic breathing.
-  * ☝️ **One Index Finger Up** ➔ **GENERATING NEW IDEA**: Robot head tilts quizzically, antenna pulses, and creative idea logs stream in the terminal.
-  * ✊ **Closed Fist or Pinch** ➔ **HEAVY LIFTING**: Robot arms raise overhead in a squat and visibly shake/tremor under physical strain.
-* **Fake Monospace Terminal**:
-  * Green monospace CRT terminal (`agent --watch`) streaming real-time telemetry and state-driven events.
+* **3D Low-Poly Robot Avatar (Three.js)**:
+  * Procedural low-poly robot assembled with smooth studio lighting, ground pedestal, and dynamic emissive shaders.
+  * **4 Distinct Avatar States**:
+    * 🔵 **READY**: Gentle idling, rhythmic breathing, and soft cyan visor glow.
+    * 💠 **LISTENING**: Attentive stance with vibrant cyan illumination and mic pulse.
+    * 🟠 **THINKING**: Quizzical head tilt with pulsing orange visor during inference.
+    * ⚡ **SPEAKING**: Expressive head nods with animated speech-reactive visor flickers.
+* **Multilingual Voice Assistant**:
+  * Native spoken interaction in **English**, **Urdu (اردو)**, and **Pashto (پښتو)** with full right-to-left (RTL) typography.
+  * Real-time live caption box displaying transcribed speech and assistant answers.
+* **Hands-Free Conversation Mode**:
+  * Optional loop mode automatically resumes listening after the assistant finishes speaking.
+  * Built-in 20-second silence timer with automatic standby.
+  * Instant speech barge-in/interruption by tapping the mic or pressing `Space`.
+* **Multi-Provider AI Engine with Automatic Fallback**:
+  * **Groq** (`llama-3.3-70b-versatile` & Whisper `whisper-large-v3`): Ultra-fast primary response engine.
+  * **Google Gemini** (`gemini-2.5-flash`): High-context multimodal intelligence.
+  * **OpenAI** (`gpt-4o-mini` & `tts-1`): Reliable secondary fallback and audio synthesis.
+  * **Built-in Offline Engine**: Scripted responsive answers when offline or without API keys.
+* **Persistent Memory & Tasks (`MemoryManager`)**:
+  * Natural language memory commands ("Remember that...", "What do you remember?", "Forget everything").
+  * Retains user profile, names, and customized notes locally in the browser (`localStorage`).
+* **Settings & API Keys Management (`⚙️`)**:
+  * Dedicated HUD settings modal (shortcut `S`).
+  * Direct key testing (`TEST` button with live ping status) and storage persistence in browser `localStorage`.
+  * Custom system prompt editor with one-click `RESET` to defaults.
 
 ---
 
@@ -34,6 +43,7 @@
 
 ### 1. Prerequisites
 * [Node.js](https://nodejs.org/) (v18+)
+* Modern browser with Web Speech API support (Chrome, Edge, Safari)
 
 ### 2. Installation
 ```bash
@@ -51,50 +61,51 @@ npm run dev
 ```
 Open **[http://localhost:5173/](http://localhost:5173/)** in your browser.
 
-### 4. Configure AI Engine (Multi-Provider Fallback)
-Create a `.env` file in the project root:
+### 4. Optional: Configure API Keys in `.env`
+You can provide keys via `.env` or enter them directly inside the in-app **Settings (`⚙️`)** panel:
 ```env
-# Groq: Llama 3.3 70B & Whisper Large v3 (HQ Listening)
+# Groq: Llama 3.3 70B & Whisper Large v3
 VITE_GROQ_KEY="your-groq-api-key"
 
 # Google Gemini: Gemini 2.5 Flash
 VITE_GEMINI_KEY="your-gemini-api-key"
 
-# OpenAI: GPT-4o Mini & TTS-1 (Urdu & Pashto Voice Output)
+# OpenAI: GPT-4o Mini & TTS-1
 VITE_OPENAI_KEY="your-openai-api-key"
 ```
 
 > [!WARNING]
 > **SECURITY NOTICE: LOCAL USE ONLY**
-> Keys in `VITE_` variables are embedded into the client-side JavaScript bundle during the build process and are visible to anyone accessing the site.
-> Therefore, **this build is for local use only**. Never host or deploy this build publicly with production or confidential API keys.
+> Keys saved in `.env` or entered into the settings modal are used client-side for direct API calls.
+> Keep this application local and never deploy publicly with private credentials.
 
 ---
 
-## 🧠 Multi-Provider AI Architecture
+## 🎮 Controls & Shortcuts
 
-* **Chat Answers Fallback Order**:
-  1. **Groq** (`llama-3.3-70b-versatile`): Lightning-fast initial responder.
-  2. **Google Gemini** (`gemini-2.5-flash`): High-context multimodal intelligence.
-  3. **OpenAI** (`gpt-4o-mini`): Reliable secondary fallback.
-  4. **Built-in Offline Engine**: Scripted responsive answers when offline or without API keys.
-* **Dynamic Provider Badges**: Live indicator displays `AI: GROQ`, `AI: GEMINI`, `AI: OPENAI`, or `MODE: BUILT-IN`.
-* **Voice Output**: Uses native browser speech synthesis for English. When Urdu or Pashto browser voices are unavailable, seamlessly synthesizes audio via OpenAI `tts-1` (`alloy`) if `VITE_OPENAI_KEY` is present.
-* **HQ Listening**: Optional high-fidelity voice recording via `MediaRecorder` transcribed through Groq Whisper `whisper-large-v3` with language matching.
-* **API Keys Settings Modal (`⚙️`)**: Interactive HUD panel to configure, test, and manage Groq, Google AI Studio (Gemini), and OpenAI keys directly from the browser (stored locally under `puppet_keys`), select the preferred chat provider, and toggle HQ Listening.
+| Action | Shortcut / Control |
+|---|---|
+| **Speak to Robot** | Click large 🎙️ button or **Hold `Space`** |
+| **Interrupt Assistant** | Click 🎙️ or tap `Space` while robot is speaking |
+| **Open Settings & API Keys** | Click ⚙️ button (top right) or press **`S`** |
+| **Close Settings** | Press **`Escape`** or click ✕ |
+| **Toggle Voice Output** | Click speaker icon 🔊 / 🔇 (top right) |
+| **Switch Language** | Click `EN`, `اردو`, or `پښتو` buttons |
+| **Toggle Conversation Mode** | Click `CONVERSATION: ON/OFF` button |
+| **Clear Conversation** | Click `CLEAR` in conversation history panel |
 
 ---
 
-## 🎮 Controls
+## 📁 Project Architecture
 
-* **Webcam Mode**: Click **"START CAMERA"** in the top bar and allow camera permissions.
-* **Keyboard Shortcuts**:
-  * `Space` (Hold) : Speak to Puppet Agent
-  * `1` : Simulate Open Hand (IDLE)
-  * `2` : Simulate Index Finger Up (GENERATING NEW IDEA)
-  * `3` : Simulate Closed Fist / Pinch (HEAVY LIFTING)
-  * `C` : Toggle Camera On / Off
-  * `F` : Toggle Fullscreen
-  * `R` : Toggle 9:16 Vertical Reel Mode
-  * `V` : Toggle Continuous Voice Recognition
-
+```
+├── index.html          # Main application structure & settings modal
+├── package.json        # Dependencies (Three.js, Vite)
+├── src/
+│   ├── main.js         # Core application coordinator & DOM events
+│   ├── robot.js        # Three.js 3D robot avatar & kinematics
+│   ├── assistant.js    # Multi-provider voice assistant & LLM streaming
+│   ├── voice.js        # SpeechSynthesis & audio utterance management
+│   ├── memory.js       # Local persistent memory & task manager
+│   └── style.css       # Cybernetic dark theme stylesheet
+```

@@ -61,6 +61,34 @@ export function clearPuppetKeys() {
   localStorage.removeItem('puppet_keys');
 }
 
+// 2. Personality / System Prompt Configuration
+export const DEFAULT_SYSTEM_PROMPT = "You are Puppet Agent, a friendly voice assistant. Answer in 1 to 3 short spoken sentences. No markdown, no lists, no emojis. Reply in the language the user is speaking. If you do not know something, say so.";
+
+export function getSavedSystemPrompt() {
+  if (typeof localStorage === 'undefined') return DEFAULT_SYSTEM_PROMPT;
+  try {
+    const saved = localStorage.getItem('puppet_agent_system_prompt');
+    if (saved && saved.trim()) return saved.trim();
+  } catch (_) {}
+  return DEFAULT_SYSTEM_PROMPT;
+}
+
+export function saveSystemPrompt(prompt) {
+  if (typeof localStorage === 'undefined') return;
+  const clean = (prompt && prompt.trim()) ? prompt.trim() : DEFAULT_SYSTEM_PROMPT;
+  try {
+    localStorage.setItem('puppet_agent_system_prompt', clean);
+  } catch (_) {}
+}
+
+export function resetSystemPrompt() {
+  if (typeof localStorage === 'undefined') return DEFAULT_SYSTEM_PROMPT;
+  try {
+    localStorage.setItem('puppet_agent_system_prompt', DEFAULT_SYSTEM_PROMPT);
+  } catch (_) {}
+  return DEFAULT_SYSTEM_PROMPT;
+}
+
 // Safe API key reader: reads from localStorage ('puppet_keys') FIRST, import.meta.env (.env) as fallback
 export function getApiKeys() {
   const local = getSavedPuppetKeys();
@@ -172,9 +200,19 @@ export class VoiceAssistant {
     this.onAgentAnswer = options.onAgentAnswer || (() => {});
     this.onError = options.onError || (() => {});
     this.onStatus = options.onStatus || (() => {});
-    this.onDelegate = options.onDelegate || null;
+    this.onSpeechEnd = options.onSpeechEnd || (() => {});
     this.onProviderBadgeUpdate = options.onProviderBadgeUpdate || (() => {});
     this.robotVoice = options.robotVoice;
+    this.onSilenceCallback = options.onSilence || null;
+
+    // Sentence speech queue for early speaking & streaming
+    this.speechQueue = [];
+    this.isSpeakingQueueItem = false;
+    this.isStreamComplete = true;
+    this.currentAnsweringFullText = '';
+    this.sentenceBuffer = '';
+    this.streamAbortController = null;
+    this.currentSentenceTimer = null;
 
     // Preferred provider saved in localStorage (stores ONLY provider name, never keys)
     const savedProvider = (typeof localStorage !== 'undefined' && localStorage.getItem('puppet_agent_preferred_provider')) || 'auto';
@@ -190,7 +228,7 @@ export class VoiceAssistant {
     const savedLang = (typeof localStorage !== 'undefined' && localStorage.getItem('puppet_agent_lang')) || 'en';
     this.currentLang = LANG_CONFIG[savedLang] ? savedLang : 'en';
 
-    // Conversation Memory: last 6 messages
+    // Conversation Memory: last 8 messages
     this.conversationHistory = [];
 
     // Mode A: Random Jokes Pools (8 short jokes per language)
@@ -241,6 +279,7 @@ export class VoiceAssistant {
     this.mediaStream = null;
     this.audioChunks = [];
     this.activeAudio = null;
+    this.voiceEnabled = false; // Starts OFF (muted) until speaker button is clicked
 
     this.initRecognition();
   }
@@ -346,6 +385,7 @@ export class VoiceAssistant {
       this.isListening = true;
       this.activeTranscript = '';
       this.onStatus({ status: 'LISTENING...', transcript: '' });
+      this.onStateChange('LISTENING', 'LISTENING');
     };
 
     this.recognition.onresult = (event) => {
@@ -366,21 +406,52 @@ export class VoiceAssistant {
         if (this.recognition) {
           this.recognition.lang = 'en-US';
         }
+        this.onStatus({ status: 'READY', transcript: '' });
+        this.onStateChange('READY', 'READY');
       } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
-        this.onError('microphone unavailable');
+        const blockedMsg = "Microphone is blocked. Please allow microphone access in your browser settings (click the lock icon in the address bar).";
+        this.onError(blockedMsg);
+        this.onStatus({ status: 'READY', transcript: blockedMsg });
+        this.onStateChange('READY', 'READY');
+      } else if (event.error === 'no-speech') {
+        this.onSilence();
+      } else {
+        this.onStatus({ status: 'READY', transcript: '' });
+        this.onStateChange('READY', 'READY');
       }
-      this.onStatus({ status: 'IDLE', transcript: '' });
     };
 
     this.recognition.onend = () => {
+      const wasListening = this.isListening;
       this.isListening = false;
       const question = this.activeTranscript.trim();
       if (question.length > 0) {
         this.processQuestion(question);
+      } else if (wasListening) {
+        this.onSilence();
       } else {
-        this.onStatus({ status: 'IDLE', transcript: '' });
+        this.onStatus({ status: 'READY', transcript: '' });
+        this.onStateChange('READY', 'READY');
       }
     };
+  }
+
+  onSilence() {
+    this.isListening = false;
+    if (this.onSilenceCallback) {
+      this.onSilenceCallback();
+      return;
+    }
+    this.onStatus({ status: 'READY', transcript: 'I did not hear anything' });
+    this.onStateChange('READY', 'READY');
+  }
+
+  getSystemPrompt() {
+    return getSavedSystemPrompt();
+  }
+
+  setSystemPrompt(prompt) {
+    saveSystemPrompt(prompt);
   }
 
   // Determine provider execution order: Groq first (fastest), then Gemini, then OpenAI
@@ -471,6 +542,7 @@ export class VoiceAssistant {
       this.mediaRecorder.onstart = () => {
         this.isListening = true;
         this.onStatus({ status: 'LISTENING...', transcript: 'HQ Audio Recording (Groq Whisper)...' });
+        this.onStateChange('LISTENING', 'LISTENING');
       };
 
       this.mediaRecorder.onerror = (e) => {
@@ -482,7 +554,8 @@ export class VoiceAssistant {
     } catch (err) {
       console.warn('Microphone permission error:', err);
       this.onError('microphone unavailable');
-      this.onStatus({ status: 'IDLE', transcript: '' });
+      this.onStatus({ status: 'READY', transcript: '' });
+      this.onStateChange('READY', 'READY');
     }
   }
 
@@ -499,7 +572,8 @@ export class VoiceAssistant {
         }
 
         if (this.audioChunks.length === 0) {
-          this.onStatus({ status: 'IDLE', transcript: '' });
+          this.onStatus({ status: 'READY', transcript: '' });
+          this.onStateChange('READY', 'READY');
           return;
         }
 
@@ -508,7 +582,8 @@ export class VoiceAssistant {
         this.audioChunks = [];
 
         if (blob.size < 400) {
-          this.onStatus({ status: 'IDLE', transcript: '' });
+          this.onStatus({ status: 'READY', transcript: '' });
+          this.onStateChange('READY', 'READY');
           return;
         }
 
@@ -516,12 +591,14 @@ export class VoiceAssistant {
         if (transcript && transcript.trim().length > 0) {
           this.processQuestion(transcript.trim());
         } else {
-          this.onStatus({ status: 'IDLE', transcript: '' });
+          this.onStatus({ status: 'READY', transcript: '' });
+          this.onStateChange('READY', 'READY');
         }
       } catch (err) {
         console.warn('Groq Whisper transcription error:', err);
         this.onError(`groq whisper failed: ${err.message || 'transcription error'}`);
-        this.onStatus({ status: 'IDLE', transcript: '' });
+        this.onStatus({ status: 'READY', transcript: '' });
+        this.onStateChange('READY', 'READY');
       }
     };
 
@@ -560,31 +637,189 @@ export class VoiceAssistant {
     return data.text || '';
   }
 
-  async processQuestion(question) {
-    // 1. Log question to terminal: [user] <my question>
-    this.onUserQuestion(question);
+  // Stop speaking and clear all queued sentences & active streams
+  stopSpeaking() {
+    if (this.streamAbortController) {
+      try { this.streamAbortController.abort(); } catch (_) {}
+      this.streamAbortController = null;
+    }
+    if (this.currentSentenceTimer) {
+      clearTimeout(this.currentSentenceTimer);
+      this.currentSentenceTimer = null;
+    }
+    this.speechQueue = [];
+    this.sentenceBuffer = '';
+    this.isSpeakingQueueItem = false;
+    this.isStreamComplete = true;
+    this.isSpeaking = false;
 
-    // Check if onDelegate handles this command (e.g. delegation to Coder, Researcher, etc.)
-    if (this.onDelegate && this.onDelegate(question)) {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+    }
+    if (this.activeAudio) {
+      try {
+        this.activeAudio.pause();
+        this.activeAudio.currentTime = 0;
+      } catch (_) {}
+      this.activeAudio = null;
+    }
+  }
+
+  // Interrupt active speech and immediately begin listening
+  interruptAndListen() {
+    this.stopSpeaking();
+    this.startListening();
+  }
+
+  // Sentence queue management for streaming speech
+  enqueueSentence(sentence) {
+    const clean = (sentence || '').replace(/[*_#`~]/g, '').trim();
+    if (!clean) return;
+    this.speechQueue.push(clean);
+    this.processSpeechQueue();
+  }
+
+  processSpeechQueue() {
+    if (this.isSpeakingQueueItem) {
       return;
     }
 
-    // 2. Switch robot to thinking ("generating new idea") pose & show THINKING...
-    this.onStatus({ status: 'THINKING...', transcript: question });
-    this.onStateChange('IDEA', 'ASSISTANT: THINKING');
+    if (this.speechQueue.length === 0) {
+      if (this.isStreamComplete && !this.isSpeakingQueueItem) {
+        this.finishSpeaking();
+      }
+      return;
+    }
 
-    // 3. Generate answer using fallback chain: Groq -> Gemini -> OpenAI -> Built-in
-    let answer = '';
+    this.isSpeakingQueueItem = true;
+    this.isSpeaking = true;
+    this.onStateChange('SPEAKING', 'SPEAKING');
+
+    const sentence = this.speechQueue.shift();
+    this.playSingleSentence(sentence, () => {
+      this.isSpeakingQueueItem = false;
+      this.processSpeechQueue();
+    });
+  }
+
+  finishSpeaking() {
+    this.isSpeaking = false;
+    this.isSpeakingQueueItem = false;
+    this.onStateChange('READY', 'READY');
+    this.onStatus({ status: 'READY', transcript: '' });
+    if (this.onSpeechEnd) {
+      this.onSpeechEnd(this.currentAnsweringFullText);
+    }
+  }
+
+  handleStreamChunk(delta) {
+    if (!delta) return;
+    this.currentAnsweringFullText += delta;
+    this.sentenceBuffer = (this.sentenceBuffer || '') + delta;
+
+    // Show real-time streaming answer in live caption box
+    this.onStatus({ status: 'ANSWERING...', transcript: this.currentAnsweringFullText });
+
+    // Look for complete sentence boundaries in buffer
+    let match;
+    while ((match = this.sentenceBuffer.match(/([.!?۔؟]+(?:\s+|$|\n))/))) {
+      const endIdx = match.index + match[0].length;
+      const sentence = this.sentenceBuffer.slice(0, endIdx).replace(/[*_#`~]/g, '').trim();
+      this.sentenceBuffer = this.sentenceBuffer.slice(endIdx);
+      if (sentence.length > 0) {
+        this.enqueueSentence(sentence);
+      }
+    }
+  }
+
+  markStreamComplete() {
+    this.isStreamComplete = true;
+    if (this.sentenceBuffer && this.sentenceBuffer.trim().length > 0) {
+      const remaining = this.sentenceBuffer.replace(/[*_#`~]/g, '').trim();
+      this.sentenceBuffer = '';
+      if (remaining.length > 0) {
+        this.enqueueSentence(remaining);
+      }
+    }
+    if (this.speechQueue.length === 0 && !this.isSpeakingQueueItem) {
+      this.finishSpeaking();
+    }
+  }
+
+  // Parse server-sent events (SSE) stream for Groq, Gemini, and OpenAI
+  async readSseStream(response, onChunk, signal) {
+    if (!response.body) {
+      throw new Error('ReadableStream not supported');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let accumulated = '';
+
+    while (true) {
+      if (signal && signal.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue;
+        if (trimmed.startsWith('data: ')) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === '[DONE]') continue;
+          try {
+            const json = JSON.parse(dataStr);
+            const delta = json.choices?.[0]?.delta?.content || json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (delta) {
+              accumulated += delta;
+              if (onChunk) onChunk(delta);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    return accumulated.replace(/[*_#`~]/g, '').trim();
+  }
+
+  async processQuestion(question) {
+    if (!question || !question.trim()) return;
+    const cleanQ = question.trim();
+
+    // 1. Log question
+    this.onUserQuestion(cleanQ);
+
+    // Stop any existing speaking or queue
+    this.stopSpeaking();
+
+    // 2. Switch robot to THINKING
+    this.onStatus({ status: 'THINKING...', transcript: cleanQ });
+    this.onStateChange('THINKING', 'THINKING');
+
+    // 3. Prepare system prompt and history
+    let systemPrompt = this.getSystemPrompt();
+    if (this.currentLang === 'ur') {
+      systemPrompt += "\nReply in Urdu using proper Urdu/Arabic script (نستعلیق / اردو رسم الخط).";
+    } else if (this.currentLang === 'ps') {
+      systemPrompt += "\nReply in Pashto using proper Pashto script (پښتو ليکدود).";
+    }
+
     const keys = getApiKeys();
     const providersToTry = this.getProviderOrder();
     let succeeded = false;
 
-    let systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Answer ONLY in English, in 1 to 2 short spoken sentences. No markdown, no lists, no emojis.";
-    if (this.currentLang === 'ur') {
-      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Urdu, in 1 to 2 short spoken sentences, using proper script (Urdu in Arabic script / نستعلیق / عربی رسم الخط). Do NOT use Roman Urdu or English. No markdown, no lists, no emojis.";
-    } else if (this.currentLang === 'ps') {
-      systemPrompt = "You are Puppet Agent, a friendly robot voice assistant. Reply ONLY in Pashto, in 1 to 2 short spoken sentences, using proper script (Pashto in Arabic script / پښتو ليکدود). Do NOT use Latin/Roman Pashto or English. No markdown, no lists, no emojis.";
-    }
+    // Reset streaming state
+    this.streamAbortController = new AbortController();
+    const signal = this.streamAbortController.signal;
+    this.speechQueue = [];
+    this.sentenceBuffer = '';
+    this.isSpeakingQueueItem = false;
+    this.isStreamComplete = false;
+    this.currentAnsweringFullText = '';
 
     for (const provider of providersToTry) {
       const key = keys[provider];
@@ -594,57 +829,64 @@ export class VoiceAssistant {
       }
 
       try {
+        let fullAnswer = '';
         if (provider === 'groq') {
-          answer = await this.queryGroq(question, systemPrompt, key);
+          fullAnswer = await this.streamGroq(cleanQ, systemPrompt, key, signal);
         } else if (provider === 'gemini') {
-          answer = await this.queryGemini(question, systemPrompt, key);
+          fullAnswer = await this.streamGemini(cleanQ, systemPrompt, key, signal);
         } else if (provider === 'openai') {
-          answer = await this.queryOpenAI(question, systemPrompt, key);
+          fullAnswer = await this.streamOpenAI(cleanQ, systemPrompt, key, signal);
         }
 
-        if (answer && answer.length > 0) {
+        if (fullAnswer && fullAnswer.trim().length > 0) {
           this.currentAnsweringProvider = provider;
           this.onProviderBadgeUpdate(this.getBadgeText(provider), true);
           succeeded = true;
+          this.onAgentAnswer(fullAnswer.trim());
+          this.markStreamComplete();
           break;
         }
       } catch (err) {
+        if (signal.aborted) {
+          return; // Interrupted by user
+        }
         const shortMsg = err.message || 'request error';
         this.onError(`${provider} failed: ${shortMsg}`);
       }
     }
 
-    // Fallback to Mode A built-in answers if all providers failed
+    // Fallback to built-in answers if all providers failed
     if (!succeeded) {
+      if (signal.aborted) return;
       this.currentAnsweringProvider = null;
       this.onProviderBadgeUpdate(this.getBadgeText(null), false);
-      answer = this.getBuiltInAnswer(question);
+      const builtIn = this.getBuiltInAnswer(cleanQ);
+      this.currentAnsweringFullText = builtIn;
+      this.onAgentAnswer(builtIn);
+      this.enqueueSentence(builtIn);
+      this.markStreamComplete();
     }
 
-    // Update conversation memory: keep last 6 messages
-    this.conversationHistory.push({ role: 'user', text: question });
-    this.conversationHistory.push({ role: 'model', text: answer });
-    if (this.conversationHistory.length > 6) {
-      this.conversationHistory = this.conversationHistory.slice(-6);
+    // Update conversation memory: keep last 8 messages
+    if (this.currentAnsweringFullText) {
+      this.conversationHistory.push({ role: 'user', text: cleanQ });
+      this.conversationHistory.push({ role: 'model', text: this.currentAnsweringFullText });
+      if (this.conversationHistory.length > 8) {
+        this.conversationHistory = this.conversationHistory.slice(-8);
+      }
     }
-
-    // 4. Answering: speak out loud, HEAVY LIFTING for 1s, then IDLE
-    this.speakAnswer(answer);
   }
 
-  // Groq Chat Completions API (Llama 3.3 70B)
-  async queryGroq(question, systemPrompt, key) {
+  // Stream Groq Chat Completions API (Llama 3.3 70B)
+  async streamGroq(question, systemPrompt, key, signal) {
     const messages = [{ role: 'system', content: systemPrompt }];
-    this.conversationHistory.forEach(item => {
+    this.conversationHistory.slice(-8).forEach(item => {
       messages.push({
         role: item.role === 'model' ? 'assistant' : 'user',
         content: item.text || item.parts?.[0]?.text || ''
       });
     });
     messages.push({ role: 'user', content: question });
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch(AI_MODELS_CONFIG.groq.chatEndpoint, {
       method: 'POST',
@@ -655,27 +897,28 @@ export class VoiceAssistant {
       body: JSON.stringify({
         model: AI_MODELS_CONFIG.groq.chatModel,
         messages,
-        max_completion_tokens: 150,
-        temperature: 0.7
+        max_completion_tokens: 180,
+        temperature: 0.7,
+        stream: true
       }),
-      signal: controller.signal
-    }).finally(() => clearTimeout(timer));
+      signal
+    });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${response.status}`);
     }
 
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) throw new Error('empty response');
-    return text.replace(/[*_#`~]/g, '').trim();
+    this.sentenceBuffer = '';
+    return await this.readSseStream(response, (delta) => {
+      this.handleStreamChunk(delta);
+    }, signal);
   }
 
-  // Google Gemini GenerateContent API (Gemini 2.5 Flash)
-  async queryGemini(question, systemPrompt, key) {
+  // Stream Google Gemini GenerateContent API (Gemini 2.5 Flash)
+  async streamGemini(question, systemPrompt, key, signal) {
     const contents = [];
-    this.conversationHistory.forEach(item => {
+    this.conversationHistory.slice(-8).forEach(item => {
       contents.push({
         role: item.role === 'model' ? 'model' : 'user',
         parts: [{ text: item.text || item.parts?.[0]?.text || '' }]
@@ -686,43 +929,38 @@ export class VoiceAssistant {
     const payload = {
       systemInstruction: { parts: [{ text: systemPrompt }] },
       contents,
-      generationConfig: { maxOutputTokens: 150, temperature: 0.7 }
+      generationConfig: { maxOutputTokens: 180, temperature: 0.7 }
     };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-
-    const response = await fetch(AI_MODELS_CONFIG.gemini.chatEndpoint(key), {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${key}`;
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal
-    }).finally(() => clearTimeout(timer));
+      signal
+    });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${response.status}`);
     }
 
-    const data = await response.json();
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidate) throw new Error('empty response');
-    return candidate.replace(/[*_#`~]/g, '').trim();
+    this.sentenceBuffer = '';
+    return await this.readSseStream(response, (delta) => {
+      this.handleStreamChunk(delta);
+    }, signal);
   }
 
-  // OpenAI Chat Completions API (GPT-4o Mini)
-  async queryOpenAI(question, systemPrompt, key) {
+  // Stream OpenAI Chat Completions API (GPT-4o Mini)
+  async streamOpenAI(question, systemPrompt, key, signal) {
     const messages = [{ role: 'system', content: systemPrompt }];
-    this.conversationHistory.forEach(item => {
+    this.conversationHistory.slice(-8).forEach(item => {
       messages.push({
         role: item.role === 'model' ? 'assistant' : 'user',
         content: item.text || item.parts?.[0]?.text || ''
       });
     });
     messages.push({ role: 'user', content: question });
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch(AI_MODELS_CONFIG.openai.chatEndpoint, {
       method: 'POST',
@@ -733,24 +971,38 @@ export class VoiceAssistant {
       body: JSON.stringify({
         model: AI_MODELS_CONFIG.openai.chatModel,
         messages,
-        max_tokens: 150,
-        temperature: 0.7
+        max_tokens: 180,
+        temperature: 0.7,
+        stream: true
       }),
-      signal: controller.signal
-    }).finally(() => clearTimeout(timer));
+      signal
+    });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error?.message || `HTTP ${response.status}`);
     }
 
-    const data = await response.json();
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) throw new Error('empty response');
-    return text.replace(/[*_#`~]/g, '').trim();
+    this.sentenceBuffer = '';
+    return await this.readSseStream(response, (delta) => {
+      this.handleStreamChunk(delta);
+    }, signal);
   }
 
-  // Multi-provider query helper for specialized agents and external consumers
+  // Non-streaming compatibility helpers
+  async queryGroq(question, systemPrompt, key) {
+    return this.streamGroq(question, systemPrompt, key, null);
+  }
+
+  async queryGemini(question, systemPrompt, key) {
+    return this.streamGemini(question, systemPrompt, key, null);
+  }
+
+  async queryOpenAI(question, systemPrompt, key) {
+    return this.streamOpenAI(question, systemPrompt, key, null);
+  }
+
+  // Multi-provider query helper for external consumers
   async queryAiMultiProvider({ prompt, systemPrompt }) {
     const keys = getApiKeys();
     const providersToTry = this.getProviderOrder();
@@ -761,11 +1013,11 @@ export class VoiceAssistant {
 
       try {
         if (provider === 'groq') {
-          return await this.queryGroq(prompt, systemPrompt, key);
+          return await this.streamGroq(prompt, systemPrompt, key, null);
         } else if (provider === 'gemini') {
-          return await this.queryGemini(prompt, systemPrompt, key);
+          return await this.streamGemini(prompt, systemPrompt, key, null);
         } else if (provider === 'openai') {
-          return await this.queryOpenAI(prompt, systemPrompt, key);
+          return await this.streamOpenAI(prompt, systemPrompt, key, null);
         }
       } catch (err) {
         this.onError(`${provider} failed: ${err.message || 'request error'}`);
@@ -854,11 +1106,11 @@ export class VoiceAssistant {
 
     if (isHelp) {
       if (lang === 'ur') {
-        return "میں اشاروں پر عمل کر سکتا ہوں، آواز میں بات کر سکتا ہوں، نوٹس اور ٹاسک یاد رکھ سکتا ہوں۔";
+        return "میں آواز میں بات کر سکتا ہوں، سوالات کے جواب دے سکتا ہوں، اور نوٹس اور ٹاسک یاد رکھ سکتا ہوں۔";
       } else if (lang === 'ps') {
-        return "زه په اشارو حرکت کوم، خبرې کوم، او ستاسو دندې او یادښتونه ساتم.";
+        return "زه په غږ خبرې کوم، پوښتنو ته ځواب وایم، او ستاسو دندې او یادښتونه ساتم.";
       } else {
-        return "I can respond to hand gestures, answer voice questions, store notes in memory, and manage your tasks.";
+        return "I can answer voice questions, store notes in memory, and manage your tasks.";
       }
     }
 
@@ -872,33 +1124,44 @@ export class VoiceAssistant {
     }
   }
 
-  // Voice Output Execution
-  async speakAnswer(answer) {
-    this.isSpeaking = true;
-    this.stopListening();
-    this.onStatus({ status: 'ANSWERING...', transcript: answer });
-
-    // Print "[agent] <answer>" in terminal (green with typewriter effect)
-    this.onAgentAnswer(answer);
-
-    // While it speaks, switch to HEAVY LIFTING for 1 second, then IDLE when finished
-    this.onStateChange('LIFTING', 'ASSISTANT: ANSWERING', { silentVoice: true });
-
-    let speechFinished = false;
-    let oneSecondElapsed = false;
-
-    const checkFinished = () => {
-      if (speechFinished && oneSecondElapsed) {
-        this.isSpeaking = false;
-        this.onStateChange('IDLE', 'OPEN HAND', { silentVoice: true });
-        this.onStatus({ status: 'IDLE', transcript: '' });
+  setVoiceEnabled(enabled) {
+    this.voiceEnabled = Boolean(enabled);
+    if (!this.voiceEnabled) {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        try { window.speechSynthesis.cancel(); } catch (_) {}
       }
+      if (this.activeAudio) {
+        try { this.activeAudio.pause(); } catch (_) {}
+        this.activeAudio = null;
+      }
+    }
+  }
+
+  // Single sentence audio playback with speech synthesis or OpenAI TTS
+  async playSingleSentence(sentence, onEnd) {
+    const clean = (sentence || '').replace(/[*_#`~]/g, '').trim();
+    if (!clean) {
+      if (onEnd) onEnd();
+      return;
+    }
+
+    let finished = false;
+    const finishOnce = () => {
+      if (finished) return;
+      finished = true;
+      if (this.currentSentenceTimer) {
+        clearTimeout(this.currentSentenceTimer);
+        this.currentSentenceTimer = null;
+      }
+      if (onEnd) onEnd();
     };
 
-    setTimeout(() => {
-      oneSecondElapsed = true;
-      checkFinished();
-    }, 1000);
+    // If speaker is muted/disabled, simulate mouth/speaking animation briefly then proceed
+    if (!this.voiceEnabled) {
+      const duration = Math.min(1200, Math.max(300, clean.length * 40));
+      this.currentSentenceTimer = setTimeout(finishOnce, duration);
+      return;
+    }
 
     const langConfig = LANG_CONFIG[this.currentLang] || LANG_CONFIG.en;
     const langCode = langConfig.code;
@@ -910,76 +1173,58 @@ export class VoiceAssistant {
       : [];
     const matchingVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(langCode));
 
-    // 3. For English, keep the browser voice as specified
+    // 1. English or any language with matching browser voice
     if (langCode === 'en' || matchingVoices.length > 0) {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch (_) {}
+        const SpeechUtterance = window.SpeechSynthesisUtterance || (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : null);
+        if (SpeechUtterance) {
+          const utterance = new SpeechUtterance(clean);
+          utterance.rate = 1.0;
+          utterance.pitch = 0.8;
+          utterance.lang = langConfig.recLang;
 
-        if (matchingVoices.length === 0) {
-          this.onError(`no ${langName} voice installed`);
-          speechFinished = true;
-          checkFinished();
-          return;
-        }
-
-        const SpeechUtterance = (typeof window !== 'undefined' && window.SpeechSynthesisUtterance) ||
-          (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : class {});
-        const utterance = new SpeechUtterance(answer);
-        utterance.rate = 1.0;
-        utterance.pitch = 0.8;
-        utterance.lang = langConfig.recLang;
-
-        if (langCode === 'en') {
-          const preferred = matchingVoices.find(v =>
-            v.name.includes('Google US English') ||
-            v.name.includes('David') ||
-            v.name.includes('Alex') ||
-            v.name.includes('Natural') ||
-            v.name.includes('English')
-          );
-          utterance.voice = preferred || matchingVoices[0];
-        } else {
-          utterance.voice = matchingVoices[0];
-        }
-
-        utterance.onend = () => {
-          speechFinished = true;
-          checkFinished();
-        };
-        utterance.onerror = (e) => {
-          console.warn('SpeechSynthesis error:', e);
-          speechFinished = true;
-          checkFinished();
-        };
-
-        const maxDuration = Math.max(2500, answer.length * 100);
-        setTimeout(() => {
-          if (!speechFinished) {
-            speechFinished = true;
-            checkFinished();
+          if (langCode === 'en') {
+            const preferred = matchingVoices.find(v =>
+              v.name.includes('Google US English') ||
+              v.name.includes('David') ||
+              v.name.includes('Alex') ||
+              v.name.includes('Natural') ||
+              v.name.includes('English')
+            );
+            utterance.voice = preferred || matchingVoices[0];
+          } else {
+            utterance.voice = matchingVoices[0];
           }
-        }, maxDuration);
 
-        try {
-          window.speechSynthesis.speak(utterance);
-        } catch (err) {
-          console.warn('SpeechSynthesis speak error:', err);
-          speechFinished = true;
-          checkFinished();
+          utterance.onend = () => {
+            finishOnce();
+          };
+          utterance.onerror = (e) => {
+            console.warn('SpeechSynthesis sentence error:', e);
+            finishOnce();
+          };
+
+          const maxDuration = Math.max(2500, clean.length * 120);
+          this.currentSentenceTimer = setTimeout(finishOnce, maxDuration);
+
+          try {
+            window.speechSynthesis.speak(utterance);
+            return;
+          } catch (err) {
+            console.warn('SpeechSynthesis speak error:', err);
+            finishOnce();
+            return;
+          }
         }
-        return;
       }
     }
 
-    // 3. For Urdu and Pashto with NO matching browser voice installed:
+    // 2. For Urdu and Pashto with NO matching browser voice installed:
     // If VITE_OPENAI_KEY exists, use OpenAI TTS and play the returned audio
     const keys = getApiKeys();
     if (keys.openai) {
-      const played = await this.speakWithOpenAITTS(answer, keys.openai, () => {
-        speechFinished = true;
-        checkFinished();
+      const played = await this.speakWithOpenAITTS(clean, keys.openai, () => {
+        finishOnce();
       });
       if (played) {
         return;
@@ -988,8 +1233,31 @@ export class VoiceAssistant {
 
     // Fallback: no voice installed and no OpenAI key
     this.onError(`no ${langName} voice installed`);
-    speechFinished = true;
-    checkFinished();
+    finishOnce();
+  }
+
+  // Voice Output Execution: splits answer into sentences and enqueues to sentence queue
+  speakAnswer(answer) {
+    if (!answer || !answer.trim()) return;
+    const clean = answer.trim();
+    this.stopSpeaking();
+    this.isStreamComplete = false;
+    this.currentAnsweringFullText = clean;
+    this.onStatus({ status: 'ANSWERING...', transcript: clean });
+    this.onAgentAnswer(clean);
+
+    // Split answer into sentences and enqueue
+    const sentences = clean.match(/[^.!?۔؟]+(?:[.!?۔؟]+|$)/g) || [clean];
+    for (const s of sentences) {
+      if (s.trim()) {
+        this.enqueueSentence(s.trim());
+      }
+    }
+    this.markStreamComplete();
+  }
+
+  clearConversationHistory() {
+    this.conversationHistory = [];
   }
 
   // OpenAI TTS API (tts-1) for Urdu and Pashto audio playback

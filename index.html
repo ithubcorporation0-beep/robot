@@ -1,737 +1,219 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
   <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PUPPET-AGENT // Jarvis Command Center</title>
+  <title>PUPPET-AGENT // AI Voice Assistant</title>
+
+  <!-- Typography: Modern Inter, Futuristic Orbitron, Monospace JetBrains Mono & Arabic/Urdu Noto Naskh Arabic -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700;800;900&family=Orbitron:wght@500;600;700;800;900&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700;800;900&family=Noto+Naskh+Arabic:wght@400;500;600;700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 
-<body class="jarvis-command-center">
-  <!-- Full-screen transparent canvas overlay for glowing puppet strings -->
-  <canvas id="strings-canvas" class="strings-overlay"></canvas>
-
-  <!-- Main Application Shell -->
-  <div id="app" class="app-container command-center-shell">
-
-    <!-- Viral Reel Top Headline Bar (Shown when in 9:16 Reel Mode) -->
-    <div class="reel-header-bar" id="reel-header-bar">
-      <div class="reel-glow-line"></div>
-      <div class="reel-header-content">
-        <h1 class="reel-title">This Is What AI Agentic Coding Looks Like</h1>
-        <div class="reel-subtitle">REAL-TIME 3D KINEMATICS • 5-FINGER NEURAL TELEMETRY</div>
+<body class="avatar-app-body">
+  <!-- Top Bar: "PUPPET-AGENT" on left; Provider Badge, Language Switcher, Speaker, Gear on right -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="brand-title">PUPPET-AGENT</div>
+      <!-- Provider Badge: AI: GROQ / GEMINI / OPENAI / MODE: BUILT-IN -->
+      <div class="provider-badge" id="assistant-mode-badge" title="Active AI Engine">
+        <span class="badge-dot" id="assistant-mode-dot"></span>
+        <span id="assistant-mode-text">MODE: BUILT-IN</span>
       </div>
     </div>
 
-    <!-- 1. TOP BAR: "PUPPET-AGENT // COMMAND CENTER", live clock with date, and current language -->
-    <header class="app-header command-center-header">
-      <div class="header-brand">
-        <div class="brand-pulse orange-pulse"></div>
-        <span class="brand-title">PUPPET-AGENT // COMMAND CENTER</span>
-        <span class="brand-tag">JARVIS HUD</span>
+    <div class="header-right">
+      <!-- Multi-Language Switcher (EN, Urdu, Pashto) -->
+      <div class="lang-switcher" role="group" aria-label="Language Selector">
+        <button type="button" class="lang-btn active" data-lang="en" title="English">EN</button>
+        <button type="button" class="lang-btn" data-lang="ur" title="Urdu">اردو</button>
+        <button type="button" class="lang-btn" data-lang="ps" title="Pashto">پښتو</button>
       </div>
 
-      <div class="header-center-info">
-        <!-- Live Clock with Date -->
-        <div class="hud-live-clock" id="hud-live-clock" title="Mission Elapsed Time / System Clock">
-          <span class="clock-icon">⏱</span>
-          <span class="clock-time" id="live-clock-time">--:--:--</span>
-          <span class="clock-divider">•</span>
-          <span class="clock-date" id="live-clock-date">---, --- --, ----</span>
-        </div>
+      <!-- Speaker / Voice Output Button (Starts OFF) -->
+      <button id="sound-toggle-btn" class="header-icon-btn" title="Voice output: OFF (Click to enable)">
+        <span class="btn-icon">🔇</span>
+      </button>
 
-        <!-- Current Language Display Badge -->
-        <span class="hud-chip current-lang-chip" id="top-current-lang-chip" title="Selected Voice & Text Language">
-          <span class="chip-dot glow-orange"></span>
-          <span class="chip-label">LANG:</span>
-          <strong id="top-lang-val">EN</strong>
-        </span>
-
-        <span class="hud-chip" id="assistant-mode-badge"><span class="chip-dot glow-cyan" id="assistant-mode-dot"></span><span id="assistant-mode-text">MODE: BUILT-IN</span></span>
-        <span class="hud-chip" id="cam-status-chip"><span class="chip-dot glow-green"></span>VISION READY</span>
-        <!-- 4. Memory Notes Badge: "MEMORY: <n> notes" -->
-        <span class="hud-chip memory-chip" id="memory-notes-badge" title="Stored Notes in Memory">
-          <span class="chip-dot glow-orange"></span>
-          <span class="chip-label">MEMORY:</span>
-          <strong id="memory-notes-count">0</strong> NOTES
-        </span>
-        <span class="hud-chip voice-heard-chip hidden" id="voice-heard-label"><span class="chip-dot glow-cyan"></span>HEARD: —</span>
-      </div>
-
-      <div class="header-actions">
-        <!-- Clear Memory Button -->
-        <button id="clear-memory-btn" class="ctrl-btn" title="Clear notes and conversation memory">
-          <span class="btn-icon">🧠</span>
-          <span class="btn-text">CLEAR MEMORY</span>
-        </button>
-        <!-- Voice Input Recognition Command Button -->
-        <button id="voice-cmd-btn" class="ctrl-btn" title="Toggle Voice Commands Input">
-          <span class="btn-icon">🎙️</span>
-          <span class="btn-text" id="voice-cmd-text">VOICE: OFF</span>
-        </button>
-        <!-- 4. Wake Word Toggle Button: "WAKE WORD: ON/OFF", off by default -->
-        <button id="wakeword-toggle-btn" class="ctrl-btn" title="Toggle Wake Word requirement ('Hey Puppet' / 'ہے پپٹ')">
-          <span class="btn-icon">⚡</span>
-          <span class="btn-text" id="wakeword-toggle-text">WAKE WORD: OFF</span>
-        </button>
-        <button id="camera-toggle-btn" class="ctrl-btn pulse-glow" title="Start or restart webcam tracking">
-          <span class="btn-icon">📷</span>
-          <span class="btn-text">START CAMERA</span>
-        </button>
-        <button id="sim-toggle-btn" class="ctrl-btn secondary"
-          title="Toggle interactive gesture simulation if camera is not available">
-          <span class="btn-icon">🎮</span>
-          <span class="btn-text">SIMULATOR</span>
-        </button>
-        <button id="reel-toggle-btn" class="ctrl-btn" title="Toggle 9:16 Vertical Reel Mode (R)">
-          <span class="btn-icon">📱</span>
-          <span class="btn-text">9:16 REEL</span>
-        </button>
-        <button id="fullscreen-toggle-btn" class="ctrl-btn" title="Toggle Fullscreen (F)">
-          <span class="btn-icon">⛶</span>
-          <span class="btn-text">FULLSCREEN</span>
-        </button>
-        <!-- 4. HQ Listening Toggle Button (Groq Whisper) -->
-        <button id="hq-listening-toggle-btn" class="ctrl-btn" title="Toggle Groq Whisper HQ Audio Listening">
-          <span class="btn-icon">⚡</span>
-          <span class="btn-text" id="hq-listening-text">HQ MIC: OFF</span>
-        </button>
-        <!-- Speaker / Voice Output Button: starts OFF until clicked -->
-        <button id="sound-toggle-btn" class="ctrl-btn icon-only" title="Voice output: OFF (Click to enable)">
-          <span class="btn-icon">🔇</span>
-        </button>
-        <!-- Settings Gear Icon: placed on the top right -->
-        <button id="settings-toggle-btn" class="ctrl-btn icon-only settings-icon-btn highlight-btn" title="System Settings & API Keys (Press S)">
-          <span class="btn-icon">⚙️</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Main Workspace Layout: Left (World Monitor), Center (3D Robot), Right (System Status) -->
-    <main class="command-center-grid">
-
-      <!-- 2. LEFT SIDE: "WORLD MONITOR" (Sample Data, 6 headlines with tags rotating every 8s, collapsible) -->
-      <aside class="hud-side-panel panel-world-monitor" id="panel-world-monitor">
-        <div class="side-panel-header">
-          <div class="panel-header-left">
-            <span class="panel-accent-bar orange"></span>
-            <div class="panel-titles-stack">
-              <h2 class="panel-title">WORLD MONITOR</h2>
-              <span class="panel-sample-tag">SAMPLE DATA</span>
-            </div>
-          </div>
-          <button class="panel-collapse-btn" id="toggle-world-monitor" title="Toggle World Monitor (collapse/expand)">
-            <span class="collapse-icon">◀</span>
-          </button>
-        </div>
-
-        <div class="side-panel-content" id="world-monitor-content">
-          <div class="panel-meta-bar">
-            <span class="ticker-pulse-dot"></span>
-            <span class="ticker-rate-label">FEED ROTATION // 8s INTERVAL</span>
-          </div>
-          <ul class="world-headlines-list" id="world-headlines-list">
-            <!-- 6 headlines rendered and dynamically rotated -->
-          </ul>
-        </div>
-      </aside>
-
-      <!-- CENTER: 3D LOW-POLY ROBOT VIEWPORT -->
-      <section class="panel-robot-center" id="robot-panel">
-
-        <!-- Status Label HUD Above Robot -->
-        <div class="robot-hud">
-          <div class="hud-top-meta">
-            <span class="hud-label">NEURAL PUPPET STATE</span>
-            <span class="hud-chip hud-chip-compact" id="hud-assistant-mode"><span class="chip-dot glow-cyan" id="hud-assistant-mode-dot"></span><span id="hud-assistant-mode-text">MODE: BUILT-IN</span></span>
-          </div>
-          <div class="status-badge" id="robot-status-badge" data-state="IDLE">
-            <span class="status-indicator-dot"></span>
-            <span class="status-text" id="status-text-label">IDLE : STANDING STILL</span>
-          </div>
-          <div class="hud-details-row">
-            <span class="hud-subdetail" id="gesture-detected-label">GESTURE: OPEN HAND</span>
-          </div>
-        </div>
-
-        <!-- 1. SPECIALIZED DELEGATION AGENT CARDS IN A ROW: CODER, RESEARCHER, DESIGNER, SCHEDULER -->
-        <div class="specialized-agents-squad" id="specialized-agents-squad">
-          <div class="agent-cards-row" id="agent-cards-row">
-            <!-- CODER -->
-            <div class="agent-squad-card" id="agent-card-coder" data-agent="coder" title="Coder Agent (Click to test delegation • Trigger words: code, build, fix)">
-              <div class="agent-card-header">
-                <span class="agent-card-icon">💻</span>
-                <span class="agent-card-name">CODER</span>
-                <span class="agent-card-status status-idle" id="agent-status-coder">IDLE</span>
-              </div>
-              <div class="agent-progress-track">
-                <div class="agent-progress-fill" id="agent-prog-coder" style="width: 0%;"></div>
-              </div>
-            </div>
-
-            <!-- RESEARCHER -->
-            <div class="agent-squad-card" id="agent-card-researcher" data-agent="researcher" title="Researcher Agent (Click to test delegation • Trigger words: search, find, explain)">
-              <div class="agent-card-header">
-                <span class="agent-card-icon">🔍</span>
-                <span class="agent-card-name">RESEARCHER</span>
-                <span class="agent-card-status status-idle" id="agent-status-researcher">IDLE</span>
-              </div>
-              <div class="agent-progress-track">
-                <div class="agent-progress-fill" id="agent-prog-researcher" style="width: 0%;"></div>
-              </div>
-            </div>
-
-            <!-- DESIGNER -->
-            <div class="agent-squad-card" id="agent-card-designer" data-agent="designer" title="Designer Agent (Click to test delegation • Trigger words: logo, design, poster)">
-              <div class="agent-card-header">
-                <span class="agent-card-icon">🎨</span>
-                <span class="agent-card-name">DESIGNER</span>
-                <span class="agent-card-status status-idle" id="agent-status-designer">IDLE</span>
-              </div>
-              <div class="agent-progress-track">
-                <div class="agent-progress-fill" id="agent-prog-designer" style="width: 0%;"></div>
-              </div>
-            </div>
-
-            <!-- SCHEDULER -->
-            <div class="agent-squad-card" id="agent-card-scheduler" data-agent="scheduler" title="Scheduler Agent (Click to test delegation • Trigger words: remind, schedule, task)">
-              <div class="agent-card-header">
-                <span class="agent-card-icon">📅</span>
-                <span class="agent-card-name">SCHEDULER</span>
-                <span class="agent-card-status status-idle" id="agent-status-scheduler">IDLE</span>
-              </div>
-              <div class="agent-progress-track">
-                <div class="agent-progress-fill" id="agent-prog-scheduler" style="width: 0%;"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Three.js 3D WebGL Canvas Container -->
-        <div id="three-container" class="three-viewport">
-          <!-- Three.js canvas will be inserted here -->
-          <div class="viewport-crosshair crosshair-tl"></div>
-          <div class="viewport-crosshair crosshair-tr"></div>
-          <div class="viewport-crosshair crosshair-bl"></div>
-          <div class="viewport-crosshair crosshair-br"></div>
-          <div class="jarvis-arc-overlay"></div>
-          <div class="floor-grid-accent"></div>
-        </div>
-
-        <!-- Joint Attachment Legend -->
-        <div class="robot-bottom-bar">
-          <div class="string-legend">
-            <span class="legend-item"><span class="legend-dot" style="background:#ff7b00"></span>4: THUMB → L-HAND</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#ff9900"></span>8: INDEX → HEAD</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#ff5500"></span>12: MID → CHEST</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#ff7b00"></span>16: RING → R-HAND</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#ff3700"></span>20: PINKY → FEET</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- 3. RIGHT SIDE: "SYSTEM STATUS" (Fake meters CPU, mem, net changing slowly, agents online: 4 counter) -->
-      <aside class="hud-side-panel panel-system-status" id="panel-system-status">
-        <div class="side-panel-header">
-          <div class="panel-header-left">
-            <span class="panel-accent-bar orange"></span>
-            <div class="panel-titles-stack">
-              <h2 class="panel-title">SYSTEM STATUS</h2>
-              <span class="panel-live-tag">LIVE METRICS</span>
-            </div>
-          </div>
-          <button class="panel-collapse-btn" id="toggle-system-status" title="Toggle System Status (collapse/expand)">
-            <span class="collapse-icon">▶</span>
-          </button>
-        </div>
-
-        <div class="side-panel-content" id="system-status-content">
-          <!-- Meters: CPU, Memory, Network that change slowly -->
-          <div class="system-meters-section">
-            <!-- CPU Meter -->
-            <div class="meter-card">
-              <div class="meter-header">
-                <span class="meter-label">CPU CORE LOAD</span>
-                <span class="meter-val" id="meter-cpu-val">38%</span>
-              </div>
-              <div class="meter-track">
-                <div class="meter-fill meter-cpu-fill" id="meter-cpu-bar" style="width: 38%;"></div>
-              </div>
-              <div class="meter-meta">
-                <span>8 CORES // 3.84 GHz</span>
-                <span id="meter-cpu-temp">46°C</span>
-              </div>
-            </div>
-
-            <!-- Memory Meter -->
-            <div class="meter-card">
-              <div class="meter-header">
-                <span class="meter-label">MEMORY ALLOCATION</span>
-                <span class="meter-val" id="meter-mem-val">5.8 GB / 16 GB</span>
-              </div>
-              <div class="meter-track">
-                <div class="meter-fill meter-mem-fill" id="meter-mem-bar" style="width: 36.2%;"></div>
-              </div>
-              <div class="meter-meta">
-                <span>VRAM BUFFER: 2.1 GB</span>
-                <span id="meter-mem-pct">36.2%</span>
-              </div>
-            </div>
-
-            <!-- Network Meter -->
-            <div class="meter-card">
-              <div class="meter-header">
-                <span class="meter-label">NETWORK I/O</span>
-                <span class="meter-val" id="meter-net-val">482 KB/s</span>
-              </div>
-              <div class="meter-track">
-                <div class="meter-fill meter-net-fill" id="meter-net-bar" style="width: 44%;"></div>
-              </div>
-              <div class="meter-meta">
-                <span>RTT: 14ms</span>
-                <span id="meter-net-detail">▲ 140K ▼ 342K</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Agents Online: 4 Counter Section -->
-          <div class="agents-online-section">
-            <div class="agents-online-header">
-              <span class="agents-badge-icon">🤖</span>
-              <span class="agents-online-title">AGENTS ONLINE: <strong class="agents-count-num">4</strong></span>
-            </div>
-            <div class="agents-list">
-              <div class="agent-item active">
-                <span class="agent-dot green"></span>
-                <div class="agent-info">
-                  <span class="agent-name">AGENT-01 // MARIONETTE</span>
-                  <span class="agent-role">Kinematics & 3D Rig (Running)</span>
-                </div>
-              </div>
-              <div class="agent-item active">
-                <span class="agent-dot orange"></span>
-                <div class="agent-info">
-                  <span class="agent-name">AGENT-02 // TELEMETRY</span>
-                  <span class="agent-role">5-Joint Neural Feedback</span>
-                </div>
-              </div>
-              <div class="agent-item active">
-                <span class="agent-dot green"></span>
-                <div class="agent-info">
-                  <span class="agent-name">AGENT-03 // VOICE_AI</span>
-                  <span class="agent-role">Speech Pipeline & Multi-Lang</span>
-                </div>
-              </div>
-              <div class="agent-item active">
-                <span class="agent-dot cyan"></span>
-                <div class="agent-info">
-                  <span class="agent-name">AGENT-04 // GESTURE_NET</span>
-                  <span class="agent-role">Optical Landmark Tracking</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 3. TASK LIST PANEL (Persistent in localStorage) -->
-          <div class="tasks-panel-section" id="tasks-panel-section">
-            <div class="tasks-panel-header">
-              <div class="tasks-header-left">
-                <span class="tasks-badge-icon">📋</span>
-                <span class="tasks-title">TASK LIST</span>
-                <span class="tasks-count-pill" id="tasks-count-pill">0</span>
-              </div>
-              <div class="tasks-header-actions">
-                <button class="task-action-btn" id="task-read-all-btn" title="Read tasks out loud">🔊 READ</button>
-                <button class="task-action-btn danger" id="task-clear-all-btn" title="Clear all tasks">CLEAR</button>
-              </div>
-            </div>
-
-            <!-- Quick Add Task Input -->
-            <div class="task-input-bar">
-              <input type="text" id="task-quick-input" class="task-quick-input" placeholder="New task (or say 'add task ...')" autocomplete="off" spellcheck="false" />
-              <button id="task-quick-add-btn" class="task-add-btn" title="Add Task">+</button>
-            </div>
-
-            <!-- Dynamic Task Items Container -->
-            <div class="tasks-list-container" id="tasks-list-container">
-              <!-- Task cards rendered dynamically here -->
-            </div>
-          </div>
-        </div>
-      </aside>
-
-    </main>
-
-    <!-- 4 & 5. BOTTOM: Cockpit Dock with Shorter Terminal + Center Mic & Animated Voice Waveform Bar Line -->
-    <footer class="command-center-dock" id="cockpit-dock">
-      <div class="dock-collapse-bar">
-        <button class="dock-collapse-btn" id="toggle-dock-collapse" title="Toggle Terminal / Mic Cockpit (collapse/expand)">
-          <span class="dock-collapse-icon" id="dock-collapse-icon">▼</span>
-          <span class="dock-collapse-text">CONSOLE TELEMETRY & VOICE COCKPIT</span>
-        </button>
-      </div>
-
-      <div class="dock-content-wrapper" id="dock-content-wrapper">
-        <!-- Terminal Log Window (shorter in height) -->
-        <section class="dock-terminal-panel" id="terminal-panel">
-          <div class="terminal-header">
-            <div class="terminal-buttons">
-              <span class="term-btn btn-close"></span>
-              <span class="term-btn btn-min"></span>
-              <span class="term-btn btn-max"></span>
-            </div>
-            <div class="terminal-title">agent --watch (tty0) • bash 5.2.15 // telemetry logs</div>
-            <button id="clear-term-btn" class="term-clear-btn" title="Clear terminal screen">CLEAR</button>
-          </div>
-
-          <div class="terminal-body" id="terminal-screen">
-            <div class="terminal-crt-scanlines"></div>
-            <div class="terminal-content" id="terminal-logs">
-              <!-- Logs will be streamed dynamically here -->
-            </div>
-            <div class="terminal-cursor-line" id="terminal-input-container">
-              <span class="term-prompt">agent@puppet:~$</span>
-              <input type="text" id="terminal-cmd-input" class="terminal-cmd-input" placeholder="Type command... (e.g. 'code python api', 'search black holes', 'design logo', 'remind 5pm')" spellcheck="false" autocomplete="off" />
-              <span class="terminal-cursor">█</span>
-            </div>
-          </div>
-        </section>
-
-        <!-- Center Mic Button & Animated Voice Waveform -->
-        <div class="dock-voice-center" id="dock-voice-center">
-          
-          <!-- 5. Voice Waveform: while robot speaks or listens, animated waveform bar line near mic button -->
-          <div class="voice-waveform-container" id="voice-waveform-container" title="Audio Waveform Spectrum">
-            <div class="waveform-header-meta">
-              <span class="waveform-status-dot" id="waveform-status-dot"></span>
-              <span class="waveform-status-text" id="waveform-status-text">AUDIO SPECTRUM // STANDBY</span>
-            </div>
-            <div class="waveform-bars" id="waveform-bars">
-              <!-- Dynamically populated waveform frequency bars -->
-            </div>
-          </div>
-
-          <!-- Voice Assistant Big Mic Button & Live Speech Feedback -->
-          <div class="assistant-mic-container" id="assistant-mic-container">
-            <div id="assistant-status-box" class="assistant-status-box hidden">
-              <span id="assistant-status-label" class="assistant-status-label">LISTENING...</span>
-              <span id="assistant-transcript-label" class="assistant-transcript-label"></span>
-            </div>
-            <div class="assistant-controls-row">
-              <button id="assistant-mic-btn" class="assistant-mic-btn" title="Click or Hold SPACE to speak to Puppet Agent">
-                <span class="mic-pulsing-rings"></span>
-                <span class="assistant-mic-icon">🎙️</span>
-              </button>
-              <div class="assistant-lang-switcher" id="assistant-lang-switcher" role="radiogroup" aria-label="Language Switcher">
-                <button class="lang-btn active" data-lang="en" title="English">EN</button>
-                <button class="lang-btn" data-lang="ur" title="Urdu (اردو)">اردو</button>
-                <button class="lang-btn" data-lang="ps" title="Pashto (پښتو)">پښتو</button>
-              </div>
-              <button id="mic-hq-toggle-pill" class="mic-hq-pill" title="Toggle Groq Whisper HQ Audio Recording">
-                <span class="hq-pill-dot"></span>HQ
-              </button>
-            </div>
-            <div class="assistant-space-hint">HOLD [SPACE] TO SPEAK</div>
-          </div>
-
-        </div>
-      </div>
-    </footer>
-
-    <!-- Invisible Camera Stream for Hand Tracking -->
-    <div id="webcam-hidden-container" class="webcam-hidden-container" aria-hidden="true">
-      <video id="webcam-video" playsinline autoplay muted></video>
-      <canvas id="webcam-overlay"></canvas>
+      <!-- Settings Gear Icon: Opens API Keys Panel -->
+      <button id="settings-toggle-btn" class="header-icon-btn settings-btn" title="API Keys & Settings (Press S)">
+        <span class="btn-icon">⚙️</span>
+      </button>
     </div>
+  </header>
 
-    <!-- Simulated Gesture Floating Control (Hidden by default, toggled via SIMULATOR button) -->
-    <div class="simulator-drawer hidden" id="sim-drawer">
-      <div class="sim-header">
-        <div class="sim-title">GESTURE SIMULATOR (CAMERA FALLBACK)</div>
-        <button id="sim-close-btn" class="sim-close-btn" title="Close simulator drawer">✕</button>
-      </div>
-      <div class="sim-buttons">
-        <button class="sim-btn active" data-gesture="OPEN_HAND">
-          <span class="sim-emoji">✋</span>
-          <span class="sim-name">OPEN HAND</span>
-          <span class="sim-rule">IDLE: Slow Breathing</span>
-        </button>
-        <button class="sim-btn" data-gesture="INDEX_UP">
-          <span class="sim-emoji">☝️</span>
-          <span class="sim-name">INDEX FINGER UP</span>
-          <span class="sim-rule">IDEA: Head Tilts & Ideas Stream</span>
-        </button>
-        <button class="sim-btn" data-gesture="FIST">
-          <span class="sim-emoji">✊</span>
-          <span class="sim-name">CLOSED FIST / PINCH</span>
-          <span class="sim-rule">LIFTING: Arms Raise & Shake</span>
-        </button>
-        <button class="sim-btn" data-gesture="NO_HAND">
-          <span class="sim-emoji">🚫</span>
-          <span class="sim-name">NO HAND (1s TIMEOUT)</span>
-          <span class="sim-rule">Hand loss → [warn] hand lost</span>
-        </button>
+  <!-- Center Stage: 3D Robot Avatar, Status Word, Large Round Mic, Captions, Chat History -->
+  <main class="avatar-stage">
+    <!-- Centered 3D Robot Avatar Viewport -->
+    <div class="avatar-viewport-wrap">
+      <div id="robot-container" class="avatar-canvas-container"></div>
+      <!-- Status word under robot: READY / LISTENING / THINKING / SPEAKING -->
+      <div class="avatar-status-badge ready" id="avatar-status-badge">
+        <span class="status-pulse-dot"></span>
+        <span id="avatar-status-text">READY</span>
       </div>
     </div>
 
-  <!-- SYSTEM SETTINGS & API KEYS Modal Panel -->
+    <!-- Voice Control Area: Large Round Mic Button & Live Caption -->
+    <div class="voice-controls-section">
+      <button id="assistant-mic-btn" class="large-mic-btn" title="Click or hold SPACE to speak">
+        <span class="mic-glow-ring"></span>
+        <span class="mic-icon">🎙️</span>
+      </button>
+
+      <div class="mic-hint-text">Click the mic or hold SPACE and speak.</div>
+
+      <!-- Conversation Mode Toggle: CONVERSATION: ON/OFF (off by default) -->
+      <button type="button" id="conversation-toggle-btn" class="conversation-mode-btn" title="Toggle hands-free conversation mode">
+        <span class="conv-status-dot"></span>
+        <span id="conversation-toggle-text">CONVERSATION: OFF</span>
+      </button>
+
+      <!-- Live Caption Box: Shows what I am saying, then the answer text as spoken -->
+      <div id="live-caption-box" class="live-caption-box">
+        <div class="caption-label" id="caption-label">READY</div>
+        <div class="caption-text" id="live-caption-text">Speak in English, Urdu, or Pashto...</div>
+      </div>
+    </div>
+
+    <!-- Chat History Panel (Collapsible, Scrollable, You vs Assistant, RTL support, CLEAR button) -->
+    <section class="chat-history-card" id="chat-history-card">
+      <div class="chat-history-header">
+        <div class="chat-header-left" id="chat-toggle-header">
+          <span class="chat-toggle-icon" id="chat-toggle-icon">▼</span>
+          <span class="chat-header-title">CONVERSATION HISTORY</span>
+          <span class="chat-count-tag" id="chat-count-tag">0</span>
+        </div>
+        <button type="button" id="clear-chat-btn" class="clear-chat-btn" title="Clear conversation history">CLEAR</button>
+      </div>
+
+      <div class="chat-history-content" id="chat-history-content">
+        <div class="chat-messages-list" id="chat-messages-list">
+          <!-- Dynamically populated conversation messages -->
+          <div class="chat-empty-hint" id="chat-empty-hint">No messages yet. Ask a question to begin.</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- API KEYS & SETTINGS Modal Panel -->
   <div id="settings-modal" class="hud-modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
-    <div class="hud-modal-card keys-modal-card">
+    <div class="hud-modal-card">
       <div class="hud-modal-header">
         <div class="hud-modal-title-wrap">
-          <span class="panel-accent-bar orange"></span>
-          <h3 id="settings-modal-title" class="hud-modal-title">SYSTEM SETTINGS // API KEYS & OPTIONS</h3>
+          <span class="panel-accent-bar"></span>
+          <h3 id="settings-modal-title" class="hud-modal-title">API KEYS & SETTINGS</h3>
         </div>
         <button id="settings-close-btn" class="hud-modal-close" title="Close (ESC)">✕</button>
       </div>
 
-      <!-- Settings Tabs Navigation Bar -->
-      <div class="settings-tabs-nav" role="tablist">
-        <button type="button" class="settings-tab-btn active" data-tab="tab-keys" role="tab" aria-selected="true">
-          <span class="tab-icon">🔑</span>
-          <span class="tab-label">API KEYS</span>
-        </button>
-        <button type="button" class="settings-tab-btn" data-tab="tab-voice" role="tab" aria-selected="false">
-          <span class="tab-icon">🎙️</span>
-          <span class="tab-label">VOICE & AUDIO</span>
-        </button>
-        <button type="button" class="settings-tab-btn" data-tab="tab-vision" role="tab" aria-selected="false">
-          <span class="tab-icon">📷</span>
-          <span class="tab-label">VISION & DISPLAY</span>
-        </button>
-        <button type="button" class="settings-tab-btn" data-tab="tab-memory" role="tab" aria-selected="false">
-          <span class="tab-icon">🧠</span>
-          <span class="tab-label">MEMORY & DATA</span>
-        </button>
-      </div>
-
       <div class="hud-modal-body">
-        <!-- 8. First Launch Banner: shown once if no keys exist -->
+        <!-- First Launch Banner: shown once if no keys exist -->
         <div id="first-launch-banner" class="first-launch-banner hidden">
           <span class="first-launch-icon">💡</span>
           <span class="first-launch-text">Add at least one key to enable AI answers. Built-in mode works without keys.</span>
         </div>
 
-        <!-- ================= TAB 1: API KEYS ================= -->
-        <div class="settings-tab-pane active" id="tab-keys" role="tabpanel">
-          <!-- 4. Preferred Chat Provider Dropdown -->
-          <div class="settings-field-group">
-            <label for="settings-provider-select" class="settings-label">
-              Preferred chat provider
-              <span class="settings-subtext">Auto tries Groq, then Gemini, then OpenAI, then built-in answers.</span>
+        <!-- Preferred Chat Provider Dropdown -->
+        <div class="settings-field-group">
+          <label for="settings-provider-select" class="settings-label">
+            Preferred chat provider
+            <span class="settings-subtext">Auto tries Groq, then Gemini, then OpenAI, then built-in answers.</span>
+          </label>
+          <select id="settings-provider-select" class="hud-select">
+            <option value="auto">Auto</option>
+            <option value="groq">Groq</option>
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+
+        <!-- Personality / System Prompt (Editable in settings panel, with RESET button) -->
+        <div class="settings-field-group">
+          <div class="prompt-header-row">
+            <label for="settings-system-prompt" class="settings-label">
+              Personality / System Prompt
+              <span class="settings-subtext">Instructions and behavior for the AI assistant.</span>
             </label>
-            <select id="settings-provider-select" class="hud-select">
-              <option value="auto">Auto</option>
-              <option value="groq">Groq</option>
-              <option value="gemini">Gemini</option>
-              <option value="openai">OpenAI</option>
-            </select>
+            <button type="button" id="reset-system-prompt-btn" class="prompt-reset-btn" title="Reset to default prompt">RESET</button>
           </div>
+          <textarea id="settings-system-prompt" class="hud-textarea" rows="3" placeholder="Enter system prompt..."></textarea>
+        </div>
 
-          <!-- 2. Three Fields: Label, Password Input, Show/Hide Eye Button, Test Button, Status Dot -->
-          <!-- Field 1: Groq API key -->
-          <div class="key-field-block">
-            <div class="key-field-header">
-              <label for="key-input-groq" class="key-field-label">Groq API key</label>
-              <div class="key-status-indicator" id="status-container-groq">
-                <span class="status-dot dot-grey" id="status-dot-groq"></span>
-                <span class="status-msg" id="status-msg-groq">Empty</span>
-              </div>
-            </div>
-            <div class="key-input-row">
-              <input type="password" id="key-input-groq" class="key-password-input" placeholder="Enter Groq API Key..." autocomplete="off" spellcheck="false" />
-              <button type="button" class="key-vis-btn" id="toggle-vis-groq" title="Show/hide key">👁️</button>
-              <button type="button" class="key-test-btn" id="test-btn-groq" title="Test Groq key">TEST</button>
+        <!-- Groq API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-groq" class="key-field-label">Groq API key</label>
+            <div class="key-status-indicator" id="status-container-groq">
+              <span class="status-dot dot-grey" id="status-dot-groq"></span>
+              <span class="status-msg" id="status-msg-groq">Empty</span>
             </div>
           </div>
-
-          <!-- Field 2: Google AI Studio (Gemini) API key -->
-          <div class="key-field-block">
-            <div class="key-field-header">
-              <label for="key-input-gemini" class="key-field-label">Google AI Studio (Gemini) API key</label>
-              <div class="key-status-indicator" id="status-container-gemini">
-                <span class="status-dot dot-grey" id="status-dot-gemini"></span>
-                <span class="status-msg" id="status-msg-gemini">Empty</span>
-              </div>
-            </div>
-            <div class="key-input-row">
-              <input type="password" id="key-input-gemini" class="key-password-input" placeholder="Enter Gemini API Key..." autocomplete="off" spellcheck="false" />
-              <button type="button" class="key-vis-btn" id="toggle-vis-gemini" title="Show/hide key">👁️</button>
-              <button type="button" class="key-test-btn" id="test-btn-gemini" title="Test Gemini key">TEST</button>
-            </div>
-          </div>
-
-          <!-- Field 3: OpenAI API key -->
-          <div class="key-field-block">
-            <div class="key-field-header">
-              <label for="key-input-openai" class="key-field-label">OpenAI API key</label>
-              <div class="key-status-indicator" id="status-container-openai">
-                <span class="status-dot dot-grey" id="status-dot-openai"></span>
-                <span class="status-msg" id="status-msg-openai">Empty</span>
-              </div>
-            </div>
-            <div class="key-input-row">
-              <input type="password" id="key-input-openai" class="key-password-input" placeholder="Enter OpenAI API Key..." autocomplete="off" spellcheck="false" />
-              <button type="button" class="key-vis-btn" id="toggle-vis-openai" title="Show/hide key">👁️</button>
-              <button type="button" class="key-test-btn" id="test-btn-openai" title="Test OpenAI key">TEST</button>
-            </div>
-          </div>
-
-          <!-- 7. Security Notice -->
-          <div class="keys-security-notice">
-            <span class="notice-icon">🔒</span>
-            <span class="notice-text">Keys stay in this browser only. Do not use this on a shared computer. Do not publish this app online with keys.</span>
+          <div class="key-input-row">
+            <input type="password" id="key-input-groq" class="key-password-input" placeholder="Enter Groq API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-groq" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-groq" title="Test Groq key">TEST</button>
           </div>
         </div>
 
-        <!-- ================= TAB 2: VOICE & AUDIO ================= -->
-        <div class="settings-tab-pane" id="tab-voice" role="tabpanel">
-          <!-- Voice Language Selector -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Assistant Language</span>
-              <span class="setting-desc">Sets speech recognition, system prompt dialect, and text direction.</span>
-            </div>
-            <div class="settings-lang-group">
-              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="en" id="settings-lang-en">EN</button>
-              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="ur" id="settings-lang-ur">اردو</button>
-              <button type="button" class="ctrl-btn settings-lang-btn" data-lang="ps" id="settings-lang-ps">پښتو</button>
+        <!-- Google AI Studio (Gemini) API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-gemini" class="key-field-label">Google AI Studio (Gemini) API key</label>
+            <div class="key-status-indicator" id="status-container-gemini">
+              <span class="status-dot dot-grey" id="status-dot-gemini"></span>
+              <span class="status-msg" id="status-msg-gemini">Empty</span>
             </div>
           </div>
-
-          <!-- Voice Sound Output Toggle -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Robot Voice Speech Output</span>
-              <span class="setting-desc">Synthesize vocal answers out loud (Browser TTS or OpenAI audio).</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-sound">SOUND: OFF</button>
-          </div>
-
-          <!-- HQ Listening (Groq Whisper) -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">HQ Audio Listening (Groq Whisper)</span>
-              <span class="setting-desc">High-precision multilingual transcription via Groq Whisper Large v3.</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-hq">HQ MIC: OFF</button>
-          </div>
-
-          <!-- Continuous Voice Commands Toggle -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Continuous Voice Listening</span>
-              <span class="setting-desc">Continuous background listening for voice commands and delegation.</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-voicecmd">VOICE: OFF</button>
-          </div>
-
-          <!-- Wake Word Requirement Toggle -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Wake Word Requirement</span>
-              <span class="setting-desc">Require "Hey Puppet" or "ہے پپٹ" before executing voice commands.</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-wakeword">WAKE WORD: OFF</button>
+          <div class="key-input-row">
+            <input type="password" id="key-input-gemini" class="key-password-input" placeholder="Enter Gemini API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-gemini" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-gemini" title="Test Gemini key">TEST</button>
           </div>
         </div>
 
-        <!-- ================= TAB 3: VISION & DISPLAY ================= -->
-        <div class="settings-tab-pane" id="tab-vision" role="tabpanel">
-          <!-- Camera Tracking Toggle -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Webcam Optical Hand Tracking</span>
-              <span class="setting-desc">Tracks 21 hand joints & 5 fingertips using MediaPipe Vision.</span>
+        <!-- OpenAI API key -->
+        <div class="key-field-block">
+          <div class="key-field-header">
+            <label for="key-input-openai" class="key-field-label">OpenAI API key</label>
+            <div class="key-status-indicator" id="status-container-openai">
+              <span class="status-dot dot-grey" id="status-dot-openai"></span>
+              <span class="status-msg" id="status-msg-openai">Empty</span>
             </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-camera">START CAMERA</button>
           </div>
-
-          <!-- Gesture Simulator -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Interactive Gesture Simulator</span>
-              <span class="setting-desc">Simulate gestures with keys 1 (Idle), 2 (Idea), 3 (Lifting).</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-sim">SIMULATOR</button>
-          </div>
-
-          <!-- 9:16 Reel Mode -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Vertical Reel Mode (9:16)</span>
-              <span class="setting-desc">Optimizes viewport layout for mobile reels, TikTok, and shorts.</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-reel">9:16 REEL</button>
-          </div>
-
-          <!-- Fullscreen -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Fullscreen Command Center</span>
-              <span class="setting-desc">Expands interface to immersive full display mode (Press F).</span>
-            </div>
-            <button type="button" class="ctrl-btn setting-toggle-btn" id="settings-toggle-fullscreen">FULLSCREEN</button>
+          <div class="key-input-row">
+            <input type="password" id="key-input-openai" class="key-password-input" placeholder="Enter OpenAI API Key..." autocomplete="off" spellcheck="false" />
+            <button type="button" class="key-vis-btn" id="toggle-vis-openai" title="Show/hide key">👁️</button>
+            <button type="button" class="key-test-btn" id="test-btn-openai" title="Test OpenAI key">TEST</button>
           </div>
         </div>
 
-        <!-- ================= TAB 4: MEMORY & DATA ================= -->
-        <div class="settings-tab-pane" id="tab-memory" role="tabpanel">
-          <!-- Memory Statistics -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Persistent Local Memory</span>
-              <span class="setting-desc">Saved notes and user profile stored securely in browser localStorage.</span>
-            </div>
-            <div class="settings-stat-badge">
-              <span class="stat-num" id="settings-memory-notes-count">0</span>
-              <span class="stat-unit">NOTES</span>
-            </div>
-          </div>
+        <!-- Security Notice -->
+        <div class="keys-security-notice">
+          <span class="notice-icon">🔒</span>
+          <span class="notice-text">Keys stay in this browser only. Do not use this on a shared computer. Do not publish this app online with keys.</span>
+        </div>
 
-          <!-- Task Items Count -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Interactive Task Checklist</span>
-              <span class="setting-desc">Total tasks saved and tracked in the task manager.</span>
-            </div>
-            <div class="settings-stat-badge">
-              <span class="stat-num" id="settings-memory-tasks-count">0</span>
-              <span class="stat-unit">TASKS</span>
-            </div>
+        <!-- Memory management option -->
+        <div class="settings-memory-section">
+          <div class="memory-stat-row">
+            <span class="memory-stat-title">Memory & Notes</span>
+            <span class="memory-stat-badge" id="settings-memory-count">0 Notes</span>
           </div>
-
-          <!-- Memory Clear Buttons -->
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Clear Memory & Conversation</span>
-              <span class="setting-desc">Wipes stored notes, remembered name, and recent 50 messages.</span>
-            </div>
-            <button type="button" class="ctrl-btn danger-btn" id="settings-clear-memory-btn">CLEAR MEMORY</button>
-          </div>
-
-          <div class="setting-item-row">
-            <div class="setting-info-block">
-              <span class="setting-title">Clear All Checklist Tasks</span>
-              <span class="setting-desc">Removes all pending and completed items from the task list.</span>
-            </div>
-            <button type="button" class="ctrl-btn danger-btn" id="settings-clear-tasks-btn">CLEAR TASKS</button>
-          </div>
+          <button type="button" id="settings-clear-memory-btn" class="ctrl-btn danger-btn">CLEAR MEMORY</button>
         </div>
       </div>
 
-      <!-- 3. Actions: CLEAR ALL & SAVE -->
-      <div class="hud-modal-footer keys-modal-footer">
-        <button type="button" id="settings-clear-all-btn" class="ctrl-btn secondary danger-btn" title="Remove all keys from browser storage">CLEAR ALL KEYS</button>
-        <div class="footer-actions-right">
-          <button type="button" id="settings-save-btn" class="ctrl-btn primary-glow">SAVE KEYS & SETTINGS</button>
-        </div>
+      <!-- Actions: CLEAR ALL & SAVE -->
+      <div class="hud-modal-footer">
+        <button type="button" id="settings-clear-all-btn" class="ctrl-btn danger-btn" title="Remove all keys from browser storage">CLEAR ALL</button>
+        <button type="button" id="settings-save-btn" class="ctrl-btn primary-btn">SAVE</button>
       </div>
     </div>
   </div>
