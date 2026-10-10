@@ -7,6 +7,10 @@ export class RobotVoice {
     this.speech = typeof window !== 'undefined' ? window.speechSynthesis : null;
     this.voices = [];
     this.isSpeaking = false;
+    this.rate = 1.0;
+    this.pitch = 1.0;
+    this.volume = 1.0;
+    this.selectedVoiceURI = '';
 
     if (this.speech) {
       this.loadVoices();
@@ -14,6 +18,13 @@ export class RobotVoice {
         window.speechSynthesis.onvoiceschanged = () => this.loadVoices();
       }
     }
+  }
+
+  setVoiceParams(params = {}) {
+    if (typeof params.rate === 'number') this.rate = params.rate;
+    if (typeof params.pitch === 'number') this.pitch = params.pitch;
+    if (typeof params.volume === 'number') this.volume = params.volume;
+    if (typeof params.selectedVoiceURI === 'string') this.selectedVoiceURI = params.selectedVoiceURI;
   }
 
   loadVoices() {
@@ -60,13 +71,21 @@ export class RobotVoice {
     } catch (_) {}
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 0.85;
+    utterance.rate = this.rate || 1.0;
+    utterance.pitch = this.pitch || 1.0;
+    utterance.volume = this.volume !== undefined ? this.volume : 1.0;
 
-    const voice = this.getRoboticEnglishVoice();
+    let voice = null;
+    if (this.selectedVoiceURI && this.voices && this.voices.length > 0) {
+      voice = this.voices.find(v => v.voiceURI === this.selectedVoiceURI || v.name === this.selectedVoiceURI);
+    }
+    if (!voice) {
+      voice = this.getRoboticEnglishVoice();
+    }
     if (voice) {
       utterance.voice = voice;
     }
+
 
     this.isSpeaking = true;
 

@@ -89,6 +89,71 @@ export function resetSystemPrompt() {
   return DEFAULT_SYSTEM_PROMPT;
 }
 
+// 3. Voice Controls Configuration (Speed, Pitch, Volume, Engine, OpenAI voices)
+export const OPENAI_TTS_VOICES = [
+  'alloy',
+  'ash',
+  'coral',
+  'echo',
+  'fable',
+  'onyx',
+  'nova',
+  'sage',
+  'shimmer'
+];
+
+export function getSavedVoiceControls() {
+  if (typeof localStorage === 'undefined') {
+    return {
+      speed: 1.0,
+      pitch: 1.0,
+      volume: 1.0,
+      voiceURI: '',
+      engine: 'browser',
+      openAiVoice: 'alloy'
+    };
+  }
+  try {
+    const rawSpeed = localStorage.getItem('puppet_voice_speed');
+    const rawPitch = localStorage.getItem('puppet_voice_pitch');
+    const rawVolume = localStorage.getItem('puppet_voice_volume');
+    const rawVoiceURI = localStorage.getItem('puppet_voice_uri');
+    const rawEngine = localStorage.getItem('puppet_voice_engine');
+    const rawOpenAiVoice = localStorage.getItem('puppet_openai_voice');
+
+    return {
+      speed: rawSpeed !== null ? Math.min(1.3, Math.max(0.7, parseFloat(rawSpeed) || 1.0)) : 1.0,
+      pitch: rawPitch !== null ? Math.min(1.4, Math.max(0.6, parseFloat(rawPitch) || 1.0)) : 1.0,
+      volume: rawVolume !== null ? Math.min(1.0, Math.max(0.0, parseFloat(rawVolume) || 0.0)) : 1.0,
+      voiceURI: rawVoiceURI || '',
+      engine: rawEngine === 'openai' ? 'openai' : 'browser',
+      openAiVoice: OPENAI_TTS_VOICES.includes(rawOpenAiVoice) ? rawOpenAiVoice : 'alloy'
+    };
+  } catch (_) {
+    return {
+      speed: 1.0,
+      pitch: 1.0,
+      volume: 1.0,
+      voiceURI: '',
+      engine: 'browser',
+      openAiVoice: 'alloy'
+    };
+  }
+}
+
+export function saveVoiceControls(controls = {}) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (controls.speed !== undefined) localStorage.setItem('puppet_voice_speed', String(controls.speed));
+    if (controls.pitch !== undefined) localStorage.setItem('puppet_voice_pitch', String(controls.pitch));
+    if (controls.volume !== undefined) localStorage.setItem('puppet_voice_volume', String(controls.volume));
+    if (controls.voiceURI !== undefined) localStorage.setItem('puppet_voice_uri', String(controls.voiceURI));
+    if (controls.engine !== undefined) localStorage.setItem('puppet_voice_engine', String(controls.engine));
+    if (controls.openAiVoice !== undefined) localStorage.setItem('puppet_openai_voice', String(controls.openAiVoice));
+  } catch (_) {}
+}
+
+
 // Safe API key reader: reads from localStorage ('puppet_keys') FIRST, import.meta.env (.env) as fallback
 export function getApiKeys() {
   const local = getSavedPuppetKeys();
@@ -281,7 +346,17 @@ export class VoiceAssistant {
     this.activeAudio = null;
     this.voiceEnabled = false; // Starts OFF (muted) until speaker button is clicked
 
+    // Voice Controls (Speed, Pitch, Volume, Engine, Selected Voices)
+    const savedVoice = getSavedVoiceControls();
+    this.voiceRate = savedVoice.speed;
+    this.voicePitch = savedVoice.pitch;
+    this.voiceVolume = savedVoice.volume;
+    this.selectedVoiceURI = savedVoice.voiceURI;
+    this.voiceEngine = savedVoice.engine;
+    this.openAiVoice = savedVoice.openAiVoice;
+
     this.initRecognition();
+
   }
 
   // Dynamic jokes getter for compatibility with unit tests and consumers
@@ -1163,6 +1238,17 @@ export class VoiceAssistant {
       return;
     }
 
+    const keys = getApiKeys();
+    const useOpenAiEngine = (this.voiceEngine === 'openai' && keys.openai);
+
+    // 1. If OpenAI Voice engine is selected and key exists, use OpenAI TTS
+    if (useOpenAiEngine) {
+      const played = await this.speakWithOpenAITTS(clean, keys.openai, () => {
+        finishOnce();
+      });
+      if (played) return;
+    }
+
     const langConfig = LANG_CONFIG[this.currentLang] || LANG_CONFIG.en;
     const langCode = langConfig.code;
     const langName = langConfig.name;
@@ -1173,27 +1259,37 @@ export class VoiceAssistant {
       : [];
     const matchingVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(langCode));
 
-    // 1. English or any language with matching browser voice
+    // 2. English or any language with matching browser voice
     if (langCode === 'en' || matchingVoices.length > 0) {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         const SpeechUtterance = window.SpeechSynthesisUtterance || (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : null);
         if (SpeechUtterance) {
           const utterance = new SpeechUtterance(clean);
-          utterance.rate = 1.0;
-          utterance.pitch = 0.8;
+          utterance.rate = this.voiceRate || 1.0;
+          utterance.pitch = this.voicePitch || 1.0;
+          utterance.volume = this.voiceVolume !== undefined ? this.voiceVolume : 1.0;
           utterance.lang = langConfig.recLang;
 
-          if (langCode === 'en') {
-            const preferred = matchingVoices.find(v =>
-              v.name.includes('Google US English') ||
-              v.name.includes('David') ||
-              v.name.includes('Alex') ||
-              v.name.includes('Natural') ||
-              v.name.includes('English')
-            );
-            utterance.voice = preferred || matchingVoices[0];
-          } else {
-            utterance.voice = matchingVoices[0];
+          let chosenVoice = null;
+          if (this.selectedVoiceURI) {
+            chosenVoice = voices.find(v => v.voiceURI === this.selectedVoiceURI || v.name === this.selectedVoiceURI);
+          }
+
+          if (!chosenVoice) {
+            if (langCode === 'en') {
+              chosenVoice = matchingVoices.find(v =>
+                v.name.includes('Google US English') ||
+                v.name.includes('David') ||
+                v.name.includes('Alex') ||
+                v.name.includes('Natural') ||
+                v.name.includes('English')
+              );
+            }
+            if (!chosenVoice) chosenVoice = matchingVoices[0];
+          }
+
+          if (chosenVoice) {
+            utterance.voice = chosenVoice;
           }
 
           utterance.onend = () => {
@@ -1219,9 +1315,8 @@ export class VoiceAssistant {
       }
     }
 
-    // 2. For Urdu and Pashto with NO matching browser voice installed:
+    // 3. For Urdu and Pashto with NO matching browser voice installed:
     // If VITE_OPENAI_KEY exists, use OpenAI TTS and play the returned audio
-    const keys = getApiKeys();
     if (keys.openai) {
       const played = await this.speakWithOpenAITTS(clean, keys.openai, () => {
         finishOnce();
@@ -1260,9 +1355,10 @@ export class VoiceAssistant {
     this.conversationHistory = [];
   }
 
-  // OpenAI TTS API (tts-1) for Urdu and Pashto audio playback
+  // OpenAI TTS API (tts-1) for OpenAI audio playback
   async speakWithOpenAITTS(answer, openAiKey, onFinish) {
     try {
+      const voiceToUse = this.openAiVoice || AI_MODELS_CONFIG.openai.ttsVoice || 'alloy';
       const response = await fetch(AI_MODELS_CONFIG.openai.ttsEndpoint, {
         method: 'POST',
         headers: {
@@ -1272,7 +1368,7 @@ export class VoiceAssistant {
         body: JSON.stringify({
           model: AI_MODELS_CONFIG.openai.ttsModel,
           input: answer,
-          voice: AI_MODELS_CONFIG.openai.ttsVoice
+          voice: voiceToUse
         })
       });
 
@@ -1284,10 +1380,13 @@ export class VoiceAssistant {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
+      audio.volume = this.voiceVolume !== undefined ? this.voiceVolume : 1.0;
 
       const cleanup = () => {
         URL.revokeObjectURL(audioUrl);
-        this.activeAudio = null;
+        if (this.activeAudio === audio) {
+          this.activeAudio = null;
+        }
         if (onFinish) onFinish();
       };
 
@@ -1308,4 +1407,66 @@ export class VoiceAssistant {
       return false;
     }
   }
+
+  setVoiceControls(controls = {}) {
+    if (typeof controls.speed === 'number') this.voiceRate = controls.speed;
+    if (typeof controls.pitch === 'number') this.voicePitch = controls.pitch;
+    if (typeof controls.volume === 'number') this.voiceVolume = controls.volume;
+    if (typeof controls.voiceURI === 'string') this.selectedVoiceURI = controls.voiceURI;
+    if (typeof controls.engine === 'string') this.voiceEngine = controls.engine;
+    if (typeof controls.openAiVoice === 'string') this.openAiVoice = controls.openAiVoice;
+    saveVoiceControls(controls);
+  }
+
+  async testVoice(sampleText, onEnd) {
+    const defaultSentence = (this.currentLang === 'ur')
+      ? "سلام! یہ آواز کی جانچ کے لیے ایک نمونہ جملہ ہے۔"
+      : ((this.currentLang === 'ps')
+        ? "سلام! دا د غږ آزموینې لپاره یوه نمونه جمله ده."
+        : "Hello! This is a sample sentence to test the voice.");
+    const text = (sampleText && sampleText.trim()) ? sampleText.trim() : defaultSentence;
+
+    const keys = getApiKeys();
+    const useOpenAi = (this.voiceEngine === 'openai' && keys.openai);
+
+    if (useOpenAi) {
+      const ok = await this.speakWithOpenAITTS(text, keys.openai, onEnd);
+      if (!ok && onEnd) onEnd();
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      const SpeechUtterance = window.SpeechSynthesisUtterance || (typeof SpeechSynthesisUtterance !== 'undefined' ? SpeechSynthesisUtterance : null);
+      if (!SpeechUtterance) {
+        if (onEnd) onEnd();
+        return;
+      }
+      const utterance = new SpeechUtterance(text);
+      utterance.rate = this.voiceRate || 1.0;
+      utterance.pitch = this.voicePitch || 1.0;
+      utterance.volume = this.voiceVolume !== undefined ? this.voiceVolume : 1.0;
+
+      const langConfig = LANG_CONFIG[this.currentLang] || LANG_CONFIG.en;
+      utterance.lang = langConfig.recLang;
+
+      const voices = window.speechSynthesis.getVoices() || [];
+      let chosenVoice = null;
+      if (this.selectedVoiceURI) {
+        chosenVoice = voices.find(v => v.voiceURI === this.selectedVoiceURI || v.name === this.selectedVoiceURI);
+      }
+      if (!chosenVoice) {
+        const matching = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(langConfig.code));
+        chosenVoice = matching[0] || voices[0];
+      }
+      if (chosenVoice) utterance.voice = chosenVoice;
+
+      utterance.onend = () => { if (onEnd) onEnd(); };
+      utterance.onerror = () => { if (onEnd) onEnd(); };
+      window.speechSynthesis.speak(utterance);
+    } else {
+      if (onEnd) onEnd();
+    }
+  }
 }
+
